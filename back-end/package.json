@@ -1,11 +1,16 @@
 {
   "name": "marketplace-backend",
   "version": "1.0.0",
-  "description": "Backend foundation for a second-hand clothing marketplace app",
+  "description": "Backend for a second-hand clothing marketplace app using Supabase (PostgreSQL + Auth)",
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "seed:items": "node src/seed/seedItems.js",
+    "seed:profiles": "node src/seed/seedProfiles.js",
+    "seed:favorites": "node src/seed/seedFavorites.js",
+    "seed:conversations": "node src/seed/seedConversations.js",
+    "seed:orders": "node src/seed/seedOrdersReviews.js"
   },
   "keywords": [
     "express",
