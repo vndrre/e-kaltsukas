@@ -7,7 +7,8 @@ const env = {
   PORT: Number(process.env.PORT) || 5000,
   CORS_ORIGIN: process.env.CORS_ORIGIN || "*",
   SUPABASE_URL: process.env.SUPABASE_URL || "",
-  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || ""
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || "",
+  CLOUDINARY_URL: process.env.CLOUDINARY_URL || ""
 };
 
 module.exports = { env };

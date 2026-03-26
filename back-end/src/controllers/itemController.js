@@ -1,4 +1,6 @@
 const { supabase } = require("../services/supabaseClient");
+const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
+const { env } = require("../config/env");
 
 const listItems = async (req, res) => {
   try {
@@ -89,6 +91,10 @@ const createItem = async (req, res) => {
       isNew,
       images
     } = req.body;
+    if (images != null && !Array.isArray(images)) {
+      return res.status(400).json({ message: "images must be an array of URLs" });
+    }
+
 
     if (!title || price == null) {
       return res
@@ -156,7 +162,47 @@ const createItem = async (req, res) => {
   }
 };
 
+const uploadItemImage = async (req, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    if (!env.CLOUDINARY_URL) {
+      return res
+        .status(500)
+        .json({ message: "CLOUDINARY_URL is missing in server config" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "image file is required" });
+    }
+
+    if (!req.file.mimetype.startsWith("image/")) {
+      return res.status(400).json({ message: "Only image uploads are allowed" });
+    }
+
+    const result = await uploadBufferToCloudinary(req.file.buffer, {
+      public_id: `user-${req.user.id}-${Date.now()}`
+    });
+
+    return res.status(201).json({
+      image: {
+        url: result.secure_url,
+        publicId: result.public_id,
+        width: result.width,
+        height: result.height,
+        format: result.format
+      }
+    });
+  } catch (err) {
+    console.error("uploadItemImage error", err);
+    return res.status(500).json({ message: "Failed to upload image" });
+  }
+};
+
 module.exports = {
   listItems,
-  createItem
+  createItem,
+  uploadItemImage
 };
