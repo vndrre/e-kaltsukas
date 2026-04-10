@@ -1,7 +1,10 @@
 import { Image } from 'expo-image';
 import { Text, TouchableOpacity, View } from 'react-native';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 export function HeroSection() {
+  const { theme } = useAppTheme();
+
   return (
     <View className="px-4 py-2">
       <View className="relative h-64 overflow-hidden rounded-xl">
@@ -13,13 +16,17 @@ export function HeroSection() {
           className="h-full w-full"
         />
         <View className="absolute inset-0 justify-end bg-black/35 p-5">
-          <Text className="text-xs font-bold uppercase tracking-widest text-[#ecb613]">Trending Now</Text>
+          <Text className="text-xs font-bold uppercase tracking-widest" style={{ color: theme.primary }}>
+            Trending Now
+          </Text>
           <Text className="mt-1 text-3xl text-white">The Silk Edit</Text>
           <Text className="mt-2 max-w-[250px] text-sm text-slate-200">
             Timeless elegance meets modern silhouettes in our latest curated collection.
           </Text>
-          <TouchableOpacity className="mt-3 self-start rounded-full bg-[#ecb613] px-5 py-2">
-            <Text className="text-sm font-bold text-[#221d10]">Explore Collection</Text>
+          <TouchableOpacity className="mt-3 self-start rounded-full px-5 py-2" style={{ backgroundColor: theme.primary }}>
+            <Text className="text-sm font-bold" style={{ color: theme.textOnPrimary }}>
+              Explore Collection
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

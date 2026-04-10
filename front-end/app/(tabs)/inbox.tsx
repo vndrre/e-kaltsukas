@@ -1,10 +1,17 @@
 import { Text, View } from 'react-native';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 export default function InboxScreen() {
+  const { theme } = useAppTheme();
+
   return (
-    <View className="flex-1 items-center justify-center bg-[#221d10] p-6">
-      <Text className="text-3xl italic text-slate-100">Inbox</Text>
-      <Text className="mt-2 text-center text-slate-400">Inbox page scaffold is ready for next step.</Text>
+    <View className="flex-1 items-center justify-center p-6" style={{ backgroundColor: theme.background }}>
+      <Text className="text-3xl italic" style={{ color: theme.text }}>
+        Inbox
+      </Text>
+      <Text className="mt-2 text-center" style={{ color: theme.textMuted }}>
+        Inbox page scaffold is ready for next step.
+      </Text>
     </View>
   );
 }

@@ -2,15 +2,18 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 export default function TabLayout() {
+  const { theme } = useAppTheme();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#ecb613',
-        tabBarInactiveTintColor: '#8c8c8c',
-        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.textMuted,
+        tabBarStyle: [styles.tabBar, { backgroundColor: theme.background, borderTopColor: theme.border }],
         tabBarLabelStyle: styles.tabLabel,
       }}>
       <Tabs.Screen
@@ -35,10 +38,10 @@ export default function TabLayout() {
           title: 'Sell',
           tabBarButton: ({ onPress }) => (
             <Pressable accessibilityRole="button" onPress={onPress} style={styles.sellButtonContainer}>
-              <View style={styles.sellButton}>
-                <MaterialIcons name="add" size={22} color="#221d10" />
+              <View style={[styles.sellButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]}>
+                <MaterialIcons name="add" size={22} color={theme.textOnPrimary} />
               </View>
-              <Text style={styles.sellLabel}>Sell</Text>
+              <Text style={[styles.sellLabel, { color: theme.textMuted }]}>Sell</Text>
             </Pressable>
           ),
         }}
@@ -63,8 +66,6 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: '#221d10',
-    borderTopColor: 'rgba(236, 182, 19, 0.15)',
     borderTopWidth: 1,
     height: 74,
     paddingBottom: 10,
@@ -83,18 +84,15 @@ const styles = StyleSheet.create({
   },
   sellButton: {
     alignItems: 'center',
-    backgroundColor: '#ecb613',
     borderRadius: 22,
     height: 44,
     justifyContent: 'center',
-    shadowColor: '#ecb613',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
     width: 44,
   },
   sellLabel: {
-    color: '#cbd5e1',
     fontSize: 11,
     fontWeight: '700',
     marginTop: 4,
