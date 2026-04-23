@@ -27,35 +27,34 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.textMuted,
-        tabBarStyle: [styles.tabBar, { backgroundColor: theme.background, borderTopColor: theme.border }],
+        tabBarStyle: [styles.tabBar, { backgroundColor: theme.surface, borderColor: theme.border }],
         tabBarLabelStyle: styles.tabLabel,
+        tabBarHideOnKeyboard: true,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons name="home" size={24} color={color} style={focused ? styles.filledIcon : undefined} />
-          ),
+          tabBarIcon: ({ color, focused }) => <MaterialIcons name="home" size={24} color={color} style={focused ? styles.filledIcon : undefined} />,
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
           title: 'Explore',
-          tabBarIcon: ({ color }) => <MaterialIcons name="travel-explore" size={24} color={color} />,
+          tabBarIcon: ({ color }) => <MaterialIcons name="search" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="sell"
         options={{
           title: 'Sell',
-          tabBarButton: ({ onPress }) => (
+          tabBarButton: ({ onPress, accessibilityState }) => (
             <Pressable accessibilityRole="button" onPress={onPress} style={styles.sellButtonContainer}>
-              <View style={[styles.sellButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]}>
+              <View style={[styles.sellButton, { backgroundColor: theme.primary }]}>
                 <MaterialIcons name="add" size={22} color={theme.textOnPrimary} />
               </View>
-              <Text style={[styles.sellLabel, { color: theme.textMuted }]}>Sell</Text>
+              <Text style={[styles.sellLabel, { color: accessibilityState?.selected ? theme.primary : theme.textMuted }]}>Sell</Text>
             </Pressable>
           ),
         }}
@@ -71,7 +70,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => <MaterialIcons name="person-outline" size={24} color={color} />,
+          tabBarIcon: ({ color, focused }) => <MaterialIcons name={focused ? 'person' : 'person-outline'} size={24} color={color} />,
         }}
       />
     </Tabs>
@@ -80,35 +79,49 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    borderTopWidth: 1,
-    height: 74,
-    paddingBottom: 10,
+    borderWidth: 1,
+    borderRadius: 34,
+    bottom: 14,
+    height: 72,
+    left: 16,
+    paddingBottom: 8,
     paddingTop: 8,
+    position: 'absolute',
+    right: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 8,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
+    letterSpacing: 0.4,
   },
   filledIcon: {
     opacity: 1,
   },
   sellButtonContainer: {
     alignItems: 'center',
-    marginTop: -24,
+    marginTop: -30,
   },
   sellButton: {
     alignItems: 'center',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: 28,
+    height: 56,
     justifyContent: 'center',
+    width: 56,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 10,
-    width: 44,
+    elevation: 6,
   },
   sellLabel: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '700',
-    marginTop: 4,
+    letterSpacing: 0.6,
+    marginTop: 2,
   },
 });

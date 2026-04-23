@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   listItems,
+  getItemById,
   createItem,
   uploadItemImage
 } = require("../controllers/itemController");
@@ -10,6 +11,7 @@ const { upload } = require("../middleware/uploadMiddleware");
 const router = express.Router();
 
 router.get("/", listItems);
+router.get("/:id", getItemById);
 router.post(
   "/upload-image",
   authMiddleware,

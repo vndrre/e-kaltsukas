@@ -4,7 +4,7 @@ const { env } = require("../config/env");
 
 const listItems = async (req, res) => {
   try {
-    const { q, category, size, brand, minPrice, maxPrice } = req.query;
+    const { q, category, size, brand, minPrice, maxPrice, sellerId } = req.query;
 
     let query = supabase.from("items").select(
       `
@@ -41,6 +41,10 @@ const listItems = async (req, res) => {
       query = query.eq("brand", brand);
     }
 
+    if (sellerId) {
+      query = query.eq("seller_id", sellerId);
+    }
+
     if (minPrice) {
       query = query.gte("price_cents", Number(minPrice) * 100);
     }
@@ -69,6 +73,53 @@ const listItems = async (req, res) => {
   } catch (err) {
     console.error("listItems error", err);
     return res.status(500).json({ message: "Failed to list items" });
+  }
+};
+
+const getItemById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from("items")
+      .select(
+        `
+        id,
+        title,
+        description,
+        price_cents,
+        condition,
+        size,
+        brand,
+        category,
+        is_new,
+        images_json,
+        seller_id,
+        created_at
+      `
+      )
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      console.error("getItemById supabase error", error);
+      return res.status(500).json({ message: "Failed to load item" });
+    }
+
+    if (!data) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    const item = {
+      ...data,
+      price: data.price_cents / 100,
+      images: data.images_json ? JSON.parse(data.images_json) : []
+    };
+
+    return res.json({ item });
+  } catch (err) {
+    console.error("getItemById error", err);
+    return res.status(500).json({ message: "Failed to load item" });
   }
 };
 
@@ -203,6 +254,7 @@ const uploadItemImage = async (req, res) => {
 
 module.exports = {
   listItems,
+  getItemById,
   createItem,
   uploadItemImage
 };

@@ -106,6 +106,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await persistSession(nextUser, payload.token ?? null);
     } catch (error) {
+      console.log('Login error details:', error);
+      if (axios.isAxiosError(error)) {
+        console.log('Response status:', error.response?.status);
+        console.log('Response data:', error.response?.data);
+      }
       throw new Error(extractErrorMessage(error, 'Failed to log in'));
     }
   };
@@ -132,6 +137,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await persistSession(nextUser, nextToken);
     } catch (error) {
+      console.log('Register error details:', error);
+      if (axios.isAxiosError(error)) {
+        console.log('Response status:', error.response?.status);
+        console.log('Response data:', error.response?.data);
+      }
       throw new Error(extractErrorMessage(error, 'Failed to sign up'));
     }
   };
