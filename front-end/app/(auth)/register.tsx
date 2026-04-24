@@ -52,15 +52,19 @@ export default function RegisterScreen() {
 
     try {
       setIsSubmitting(true);
-      await register(name.trim(), email.trim().toLowerCase(), password);
+      const result = await register(name.trim(), email.trim().toLowerCase(), password);
+
+      if (result.needsEmailConfirmation) {
+        Alert.alert(
+          'Check your email',
+          `We created your account for ${result.email}. Verify your email, then log in.`,
+          [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
+        );
+        return;
+      }
+
       router.replace('/(tabs)');
     } catch (error) {
-      console.log('Registration error:', error);
-      if (error instanceof Error && 'response' in error) {
-        const axiosError = error as any;
-        console.log('Response data:', axiosError.response?.data);
-        console.log('Status:', axiosError.response?.status);
-      }
       const message = error instanceof Error ? error.message : 'Unable to register right now.';
       Alert.alert('Registration failed', message);
     } finally {

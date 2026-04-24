@@ -8,4 +8,13 @@ const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
   }
 });
 
-module.exports = { supabase };
+const supabaseAdmin = env.SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+  : null;
+
+module.exports = { supabase, supabaseAdmin };

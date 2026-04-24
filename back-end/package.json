@@ -10,7 +10,8 @@
     "seed:profiles": "node src/seed/seedProfiles.js",
     "seed:favorites": "node src/seed/seedFavorites.js",
     "seed:conversations": "node src/seed/seedConversations.js",
-    "seed:orders": "node src/seed/seedOrdersReviews.js"
+    "seed:orders": "node src/seed/seedOrdersReviews.js",
+    "email:test": "node src/scripts/sendTestEmail.js"
   },
   "keywords": [
     "express",
@@ -28,6 +29,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "multer": "^2.0.2",
+    "resend": "^6.12.2",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

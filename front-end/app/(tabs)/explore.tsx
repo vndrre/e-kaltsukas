@@ -2,8 +2,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
-import { Pressable, TextInput } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { api } from '@/lib/api';
 import { useAppTheme } from '@/hooks/use-app-theme';
 

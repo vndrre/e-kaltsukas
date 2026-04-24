@@ -65,7 +65,7 @@ export default function SellScreen() {
 
           <View className="mb-10">
             <Text className="mb-3 text-[10px] font-bold uppercase tracking-[3px]" style={{ color: theme.textMuted }}>
-              L'Histoire
+              {"L'Histoire"}
             </Text>
             <TextInput
               multiline

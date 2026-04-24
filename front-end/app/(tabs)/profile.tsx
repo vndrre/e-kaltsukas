@@ -61,6 +61,14 @@ type ListingItem = {
   images?: string[];
 };
 
+type ClosetCard = {
+  id: string;
+  title: string;
+  subtitle: string;
+  priceLabel: string;
+  image: string;
+};
+
 export default function ProfileScreen() {
   const { theme } = useAppTheme();
   const { user, token, logout } = useAuth();
@@ -111,7 +119,7 @@ export default function ProfileScreen() {
           location: nextProfile?.location ?? '',
           instagram: nextProfile?.instagram ?? '',
         });
-      } catch (error) {
+      } catch {
         Alert.alert('Error', 'Failed to load profile data from database.');
       } finally {
         setLoading(false);
@@ -139,11 +147,25 @@ export default function ProfileScreen() {
     }
   };
 
-  const displayName = profile?.username?.trim() || 'Alex Rivers';
-  const handle = profile?.instagram?.trim() || user?.email?.split('@')[0] || 'alex_fashion_92';
-  const about = profile?.bio?.trim() || 'Curating minimalist essentials and vintage finds from hidden corners.';
-  const renderedCloset = listings.length ? listings : closetItems;
-  const listingsCount = listings.length || 142;
+  const displayName = profile?.username?.trim() || user?.name?.trim() || user?.email?.split('@')[0] || 'Your closet';
+  const handle = profile?.instagram?.trim() || user?.email?.split('@')[0] || 'profile';
+  const about = profile?.bio?.trim() || 'Add a short bio so buyers know the style behind your closet.';
+  const renderedCloset: ClosetCard[] = listings.length
+    ? listings.map((item) => ({
+        id: item.id,
+        title: item.title,
+        subtitle: item.brand ?? item.category ?? 'Listing',
+        priceLabel: `$${item.price.toFixed(2)}`,
+        image: item.images?.[0] ?? profileImage,
+      }))
+    : closetItems.map((item) => ({
+        id: item.id,
+        title: item.name,
+        subtitle: item.brand,
+        priceLabel: item.price,
+        image: item.image,
+      }));
+  const listingsCount = listings.length;
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
@@ -254,17 +276,17 @@ export default function ProfileScreen() {
           {renderedCloset.map((item) => (
             <View key={item.id} className="mb-8 w-[48%]">
               <View className="aspect-[3/4] overflow-hidden rounded-2xl" style={{ backgroundColor: theme.surface }}>
-                <Image source={{ uri: item.images?.[0] ?? item.image }} contentFit="cover" className="h-full w-full" />
+                <Image source={{ uri: item.image }} contentFit="cover" className="h-full w-full" />
               </View>
               <Text className="mt-3 text-[9px] font-bold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
-                {item.brand ?? item.category ?? 'Listing'}
+                {item.subtitle}
               </Text>
               <View className="mt-1 flex-row items-center justify-between">
                 <Text className="text-sm" style={{ color: theme.text }}>
-                  {item.title ?? item.name}
+                  {item.title}
                 </Text>
                 <Text className="text-sm font-bold" style={{ color: theme.text }}>
-                  {typeof item.price === 'number' ? `$${item.price.toFixed(2)}` : item.price}
+                  {item.priceLabel}
                 </Text>
               </View>
             </View>
