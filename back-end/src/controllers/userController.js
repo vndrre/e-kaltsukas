@@ -1,4 +1,8 @@
 const { supabase, supabaseAdmin } = require("../services/supabaseClient");
+const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
+const { env } = require("../config/env");
+
+const profileSelectFields = "id, username, bio, location, instagram, avatar_url, created_at";
 
 const getMe = async (req, res) => {
   try {
@@ -12,7 +16,7 @@ const getMe = async (req, res) => {
     const selectProfile = () =>
       db
         .from("profiles")
-        .select("id, username, bio, location, instagram, created_at")
+        .select(profileSelectFields)
         .eq("id", userId)
         .maybeSingle();
 
@@ -58,7 +62,7 @@ const updateMe = async (req, res) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { username, bio, location, instagram } = req.body || {};
+    const { username, bio, location, instagram, avatarUrl } = req.body || {};
     const db = supabaseAdmin || supabase;
 
     const payload = {
@@ -67,13 +71,14 @@ const updateMe = async (req, res) => {
       username: username?.trim() || null,
       bio: bio?.trim() || null,
       location: location?.trim() || null,
-      instagram: instagram?.trim() || null
+      instagram: instagram?.trim() || null,
+      avatar_url: typeof avatarUrl === "string" && avatarUrl.trim() ? avatarUrl.trim() : null
     };
 
     const { data: updatedProfile, error: updateError } = await db
       .from("profiles")
       .upsert(payload, { onConflict: "id" })
-      .select("id, username, bio, location, instagram, created_at")
+      .select(profileSelectFields)
       .single();
 
     if (updateError) {
@@ -88,7 +93,72 @@ const updateMe = async (req, res) => {
   }
 };
 
+const uploadMyAvatar = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    if (!env.CLOUDINARY_URL) {
+      return res
+        .status(500)
+        .json({ message: "CLOUDINARY_URL is missing in server config" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "avatar file is required" });
+    }
+
+    if (!req.file.mimetype.startsWith("image/")) {
+      return res.status(400).json({ message: "Only image uploads are allowed" });
+    }
+
+    const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
+      folder: "marketplace/avatars",
+      public_id: `avatar-${userId}-${Date.now()}`
+    });
+
+    const db = supabaseAdmin || supabase;
+    const { data: updatedProfile, error: updateError } = await db
+      .from("profiles")
+      .upsert(
+        {
+          id: userId,
+          email: req.user.email || null,
+          avatar_url: uploadResult.secure_url
+        },
+        { onConflict: "id" }
+      )
+      .select(profileSelectFields)
+      .single();
+
+    if (updateError) {
+      console.error("uploadMyAvatar profile update error", updateError);
+      const isMissingAvatarColumn =
+        updateError.code === "42703" || /avatar_url/i.test(updateError.message || "");
+      return res.status(500).json({
+        message: isMissingAvatarColumn
+          ? "Database column profiles.avatar_url is missing. Run back-end/supabase/auth-profile-setup.sql in Supabase."
+          : updateError.message || "Failed to persist avatar URL"
+      });
+    }
+
+    return res.status(201).json({
+      avatar: {
+        url: uploadResult.secure_url,
+        publicId: uploadResult.public_id
+      },
+      user: updatedProfile
+    });
+  } catch (err) {
+    console.error("uploadMyAvatar error", err);
+    return res.status(500).json({ message: err?.message || "Failed to upload avatar" });
+  }
+};
+
 module.exports = {
   getMe,
-  updateMe
+  updateMe,
+  uploadMyAvatar
 };

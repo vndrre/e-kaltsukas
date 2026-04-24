@@ -1,7 +1,8 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAuth } from '@/hooks/auth-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
@@ -50,6 +51,7 @@ type DbProfile = {
   bio: string | null;
   location: string | null;
   instagram: string | null;
+  avatar_url: string | null;
 };
 
 type ListingItem = {
@@ -74,6 +76,7 @@ export default function ProfileScreen() {
   const { user, token, logout } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [listings, setListings] = useState<ListingItem[]>([]);
@@ -147,9 +150,75 @@ export default function ProfileScreen() {
     }
   };
 
+  const uploadAvatar = async () => {
+    if (!token) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Enable photo library access to upload a profile picture.');
+      return;
+    }
+
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (pickerResult.canceled || !pickerResult.assets?.length) {
+      return;
+    }
+
+    const asset = pickerResult.assets[0];
+    if (!asset.uri) {
+      Alert.alert('Error', 'Could not read selected image.');
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      const formData = new FormData();
+      const fallbackName = asset.fileName ?? `avatar-${Date.now()}.jpg`;
+      const mimeType = asset.mimeType ?? 'image/jpeg';
+
+      if (Platform.OS === 'web') {
+        const blob = await (await fetch(asset.uri)).blob();
+        formData.append('avatar', blob, fallbackName);
+      } else {
+        formData.append('avatar', {
+          uri: asset.uri,
+          name: fallbackName,
+          type: mimeType,
+        } as unknown as Blob);
+      }
+
+      const response = await api.post('/users/me/avatar', formData, {
+        headers: {
+          ...headers,
+        },
+      });
+
+      const nextProfile = (response.data?.user ?? null) as DbProfile | null;
+      if (nextProfile) {
+        setProfile(nextProfile);
+      }
+      Alert.alert('Saved', 'Profile picture updated.');
+    } catch (error: any) {
+      const serverMessage = error?.response?.data?.message;
+      console.error('Avatar upload error:', error?.response?.data || error);
+      Alert.alert('Error', serverMessage || 'Failed to upload profile picture.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const displayName = profile?.username?.trim() || user?.name?.trim() || user?.email?.split('@')[0] || 'Your closet';
   const handle = profile?.instagram?.trim() || user?.email?.split('@')[0] || 'profile';
   const about = profile?.bio?.trim() || 'Add a short bio so buyers know the style behind your closet.';
+  const avatarImage = profile?.avatar_url?.trim() || profileImage;
   const renderedCloset: ClosetCard[] = listings.length
     ? listings.map((item) => ({
         id: item.id,
@@ -188,8 +257,17 @@ export default function ProfileScreen() {
 
         <View className="items-center px-6 pt-4">
           <View className="h-36 w-36 overflow-hidden rounded-full border p-1.5" style={{ borderColor: theme.border }}>
-            <Image source={{ uri: profileImage }} contentFit="cover" className="h-full w-full rounded-full" />
+            <Image source={{ uri: avatarImage }} contentFit="cover" className="h-full w-full rounded-full" />
           </View>
+          <Pressable
+            className="mt-3 rounded-full border px-4 py-2"
+            style={{ borderColor: theme.border }}
+            onPress={uploadAvatar}
+            disabled={uploadingAvatar}>
+            <Text className="text-[10px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
+              {uploadingAvatar ? 'Uploading...' : 'Change Profile Picture'}
+            </Text>
+          </Pressable>
           <Text className="mt-6 text-4xl font-light" style={{ color: theme.text }}>{displayName}</Text>
           <Text className="mt-1 text-[11px] font-bold uppercase tracking-[2px]" style={{ color: theme.primary }}>
             @{handle}
