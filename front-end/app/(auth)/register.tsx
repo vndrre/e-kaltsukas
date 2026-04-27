@@ -52,17 +52,7 @@ export default function RegisterScreen() {
 
     try {
       setIsSubmitting(true);
-      const result = await register(name.trim(), email.trim().toLowerCase(), password);
-
-      if (result.needsEmailConfirmation) {
-        Alert.alert(
-          'Check your email',
-          `We created your account for ${result.email}. Verify your email, then log in.`,
-          [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
-        );
-        return;
-      }
-
+      await register(name.trim(), email.trim().toLowerCase(), password);
       router.replace('/(tabs)');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to register right now.';

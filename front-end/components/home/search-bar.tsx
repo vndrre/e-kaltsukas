@@ -6,13 +6,13 @@ export function SearchBar() {
   const { theme } = useAppTheme();
 
   return (
-    <View className="px-5 pb-2 pt-5">
-      <View className="flex-row items-center rounded-2xl px-4" style={{ backgroundColor: theme.surface }}>
+    <View className="px-4 pb-2 pt-4">
+      <View className="flex-row items-center rounded-xl px-3" style={{ backgroundColor: theme.surfaceMuted }}>
         <MaterialIcons name="search" size={20} color={theme.textMuted} />
         <TextInput
-          placeholder="Search curated collections..."
+          placeholder="Search brands, styles, or items..."
           placeholderTextColor={theme.textMuted}
-          className="ml-2 flex-1 py-4 text-sm"
+          className="ml-2 flex-1 py-3 text-sm"
           style={{ color: theme.text }}
         />
       </View>

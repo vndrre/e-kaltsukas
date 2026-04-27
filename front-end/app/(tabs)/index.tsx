@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
 import { Animated, Pressable, ScrollView, View } from 'react-native';
 
 import { HeroSection } from '@/components/home/hero-section';
@@ -13,7 +12,6 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 
 export default function HomeScreen() {
   const { theme } = useAppTheme();
-  const router = useRouter();
   const [menuVisible, setMenuVisible] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
 
@@ -55,36 +53,8 @@ export default function HomeScreen() {
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
         <SearchBar />
         <HeroSection />
-        <NewArrivalsSection
-          items={newArrivals}
-          onItemPress={(item) =>
-            router.push({
-              pathname: '/product/[id]',
-              params: {
-                id: item.id,
-                title: item.name,
-                price: item.price,
-                image: item.image,
-                category: 'New Arrivals',
-              },
-            })
-          }
-        />
-        <RecommendedSection
-          items={recommendedItems}
-          onItemPress={(item) =>
-            router.push({
-              pathname: '/product/[id]',
-              params: {
-                id: item.id,
-                title: item.name,
-                price: item.price,
-                image: item.image,
-                category: item.category,
-              },
-            })
-          }
-        />
+        <NewArrivalsSection items={newArrivals} />
+        <RecommendedSection items={recommendedItems} />
       </ScrollView>
 
       {menuVisible ? (

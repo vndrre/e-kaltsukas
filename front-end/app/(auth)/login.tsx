@@ -1,4 +1,4 @@
-import { Link, router, useLocalSearchParams } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -23,12 +23,6 @@ const HERO_IMAGE =
 export default function LoginScreen() {
   const { theme } = useAppTheme();
   const { isAuthenticated, login } = useAuth();
-  const params = useLocalSearchParams<{
-    verified?: string;
-    error?: string;
-    error_code?: string;
-    error_description?: string;
-  }>();
   const { width } = useWindowDimensions();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,29 +35,6 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     }
   }, [isAuthenticated]);
-
-  useEffect(() => {
-    const hashParams =
-      Platform.OS === 'web' && typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.hash.replace(/^#/, ''))
-        : null;
-    const errorCode = params.error_code ?? hashParams?.get('error_code');
-    const errorDescription = params.error_description ?? hashParams?.get('error_description');
-
-    if (params.verified === '1') {
-      Alert.alert('Email verified', 'Your email is confirmed. You can log in now.');
-      return;
-    }
-
-    if (errorCode === 'otp_expired') {
-      Alert.alert('Link expired', 'That confirmation link is no longer valid. Please register again to request a new email.');
-      return;
-    }
-
-    if (errorDescription) {
-      Alert.alert('Email confirmation failed', String(errorDescription).replace(/\+/g, ' '));
-    }
-  }, [params.error_code, params.error_description, params.verified]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
