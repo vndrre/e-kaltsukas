@@ -15,13 +15,26 @@ export function MenuDrawer({ onClose }: MenuDrawerProps) {
 
   return (
     <View
-      className="absolute left-0 top-0 h-full w-72 px-4 pb-8 pt-14"
-      style={{ backgroundColor: theme.surface, borderRightColor: theme.border, borderRightWidth: 1 }}>
-      <View className="mb-5 flex-row items-center justify-between">
-        <Text className="text-lg font-semibold" style={{ color: theme.text }}>
+      className="h-full w-[325px] px-4 pb-8 pt-16"
+      style={{
+        backgroundColor: theme.surface,
+        borderRightColor: theme.border,
+        borderRightWidth: 1,
+        shadowColor: '#000',
+        shadowOpacity: 0.24,
+        shadowRadius: 10,
+        shadowOffset: { width: 2, height: 0 },
+        elevation: 12,
+      }}>
+      <View className="mb-6 flex-row items-center justify-between">
+        <Text className="text-2xl font-semibold" style={{ color: theme.text }}>
           Menu
         </Text>
-        <Pressable onPress={onClose} hitSlop={10}>
+        <Pressable
+          className="h-9 w-9 items-center justify-center rounded-full"
+          onPress={onClose}
+          hitSlop={10}
+          style={{ backgroundColor: theme.surfaceMuted }}>
           <MaterialIcons name="close" size={22} color={theme.text} />
         </Pressable>
       </View>
@@ -30,21 +43,25 @@ export function MenuDrawer({ onClose }: MenuDrawerProps) {
         Theme
       </Text>
 
-      {MODES.map((option) => {
-        const active = mode === option;
+      <View className="mb-4 flex-row rounded-2xl p-1" style={{ backgroundColor: theme.surfaceMuted }}>
+        {MODES.map((option) => {
+          const active = mode === option;
 
-        return (
-          <Pressable
-            key={option}
-            className="mb-2 rounded-xl px-3 py-3"
-            onPress={() => setMode(option)}
-            style={{ backgroundColor: active ? theme.primary : theme.surfaceMuted }}>
-            <Text className="text-sm capitalize font-semibold" style={{ color: active ? theme.textOnPrimary : theme.text }}>
-              {option}
-            </Text>
-          </Pressable>
-        );
-      })}
+          return (
+            <Pressable
+              key={option}
+              className="flex-1 rounded-xl px-3 py-2.5"
+              onPress={() => setMode(option)}
+              style={{ backgroundColor: active ? theme.primary : 'transparent' }}>
+              <Text
+                className="text-center text-sm font-semibold capitalize"
+                style={{ color: active ? theme.textOnPrimary : theme.text }}>
+                {option}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }

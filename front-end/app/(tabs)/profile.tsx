@@ -1,8 +1,8 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAuth } from '@/hooks/auth-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
@@ -52,6 +52,8 @@ type DbProfile = {
   location: string | null;
   instagram: string | null;
   avatar_url: string | null;
+  followers_count?: number | null;
+  following_count?: number | null;
 };
 
 type ListingItem = {
@@ -81,7 +83,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [listings, setListings] = useState<ListingItem[]>([]);
   const [form, setForm] = useState({ username: '', bio: '', location: '', instagram: '' });
-  const opacity = useRef(new Animated.Value(0)).current;
+  const [avatarRefreshToken, setAvatarRefreshToken] = useState(0);
 
   const headers = useMemo(
     () => ({
@@ -89,14 +91,6 @@ export default function ProfileScreen() {
     }),
     [token]
   );
-
-  useEffect(() => {
-    Animated.timing(opacity, {
-      toValue: 1,
-      duration: 420,
-      useNativeDriver: true,
-    }).start();
-  }, [opacity]);
 
   useEffect(() => {
     const load = async () => {
@@ -148,6 +142,23 @@ export default function ProfileScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openEditModal = () => {
+    setForm({
+      username: profile?.username ?? '',
+      bio: profile?.bio ?? '',
+      location: profile?.location ?? '',
+      instagram: profile?.instagram ?? '',
+    });
+    setEditing(true);
+  };
+
+  const closeEditModal = () => {
+    if (saving || uploadingAvatar) {
+      return;
+    }
+    setEditing(false);
   };
 
   const uploadAvatar = async () => {
@@ -204,6 +215,7 @@ export default function ProfileScreen() {
       const nextProfile = (response.data?.user ?? null) as DbProfile | null;
       if (nextProfile) {
         setProfile(nextProfile);
+        setAvatarRefreshToken(Date.now());
       }
       Alert.alert('Saved', 'Profile picture updated.');
     } catch (error: any) {
@@ -218,7 +230,10 @@ export default function ProfileScreen() {
   const displayName = profile?.username?.trim() || user?.name?.trim() || user?.email?.split('@')[0] || 'Your closet';
   const handle = profile?.instagram?.trim() || user?.email?.split('@')[0] || 'profile';
   const about = profile?.bio?.trim() || 'Add a short bio so buyers know the style behind your closet.';
-  const avatarImage = profile?.avatar_url?.trim() || profileImage;
+  const avatarImageRaw = profile?.avatar_url?.trim() || profileImage;
+  const avatarImage = avatarImageRaw.startsWith('http')
+    ? `${avatarImageRaw}${avatarImageRaw.includes('?') ? '&' : '?'}v=${avatarRefreshToken}`
+    : avatarImageRaw;
   const renderedCloset: ClosetCard[] = listings.length
     ? listings.map((item) => ({
         id: item.id,
@@ -235,6 +250,14 @@ export default function ProfileScreen() {
         image: item.image,
       }));
   const listingsCount = listings.length;
+  const followersCount = Number.isFinite(profile?.followers_count as number) ? Number(profile?.followers_count) : 0;
+  const followingCount = Number.isFinite(profile?.following_count as number) ? Number(profile?.following_count) : 0;
+
+  const formatCompact = (value: number) =>
+    new Intl.NumberFormat('en', {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(Math.max(0, value));
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
@@ -243,78 +266,154 @@ export default function ProfileScreen() {
           <ActivityIndicator color={theme.primary} />
         </View>
       ) : (
-      <Animated.View className="flex-1" style={{ opacity }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
-        <View className="px-5 pb-4 pt-14">
-          <View className="flex-row items-center justify-between">
-            <MaterialIcons name="settings" size={22} color={theme.text} />
-            <Text className="text-xs font-extrabold uppercase tracking-[3px]" style={{ color: theme.text }}>
-              Lux Market
-            </Text>
-            <MaterialIcons name="share" size={22} color={theme.text} />
-          </View>
-        </View>
-
-        <View className="items-center px-6 pt-4">
-          <View className="h-36 w-36 overflow-hidden rounded-full border p-1.5" style={{ borderColor: theme.border }}>
-            <Image source={{ uri: avatarImage }} contentFit="cover" className="h-full w-full rounded-full" />
-          </View>
-          <Pressable
-            className="mt-3 rounded-full border px-4 py-2"
-            style={{ borderColor: theme.border }}
-            onPress={uploadAvatar}
-            disabled={uploadingAvatar}>
-            <Text className="text-[10px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
-              {uploadingAvatar ? 'Uploading...' : 'Change Profile Picture'}
-            </Text>
-          </Pressable>
-          <Text className="mt-6 text-4xl font-light" style={{ color: theme.text }}>{displayName}</Text>
-          <Text className="mt-1 text-[11px] font-bold uppercase tracking-[2px]" style={{ color: theme.primary }}>
-            @{handle}
-          </Text>
-          <Text className="mt-5 px-4 text-center text-sm italic leading-6" style={{ color: theme.textMuted }}>
-            {about}
-          </Text>
-
-          <View className="mt-8 w-full flex-row gap-3">
-            <Pressable className="flex-1 rounded-full border py-3" style={{ borderColor: theme.border }} onPress={() => setEditing((v) => !v)}>
-              <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
-                {editing ? 'Cancel' : 'Edit Profile'}
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+          <View
+            className="px-4 pb-4 pt-12"
+            style={{ backgroundColor: theme.background, borderBottomColor: theme.border, borderBottomWidth: 1 }}>
+            <View className="flex-row items-center justify-between">
+              <Text className="text-2xl font-bold italic" style={{ color: theme.primary }}>
+                Profile
               </Text>
-            </Pressable>
-            <Pressable className="flex-1 rounded-full py-3" style={{ backgroundColor: theme.text }}>
-              <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.background }}>
-                Share Closet
-              </Text>
-            </Pressable>
+              
+              <Pressable className="h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: theme.surfaceMuted }}>
+                <MaterialIcons name="settings" size={20} color={theme.text} />
+              </Pressable>
+            </View>
           </View>
-        </View>
 
-        {editing ? (
-          <View className="mx-6 mt-6 rounded-2xl border p-4" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+          <View className="px-4 pt-5">
+            <View className="rounded-3xl p-5" style={{ backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }}>
+              <View className="items-center">
+                <View className="h-28 w-28 overflow-hidden rounded-full border-2 p-1.5" style={{ borderColor: theme.border }}>
+                  <Image key={avatarImage} source={{ uri: avatarImage }} contentFit="cover" className="h-full w-full rounded-full" />
+                </View>
+                <Text className="mt-4 text-3xl font-light" style={{ color: theme.text }}>
+                  {displayName}
+                </Text>
+                <Text className="mt-1 text-[11px] font-bold uppercase tracking-[2px]" style={{ color: theme.primary }}>
+                  @{handle}
+                </Text>
+                <Text className="mt-4 text-center text-sm leading-6" style={{ color: theme.textMuted }}>
+                  {about}
+                </Text>
+              </View>
+
+              <View className="mt-6 flex-row gap-3">
+                <Pressable className="flex-1 rounded-full border py-3" style={{ borderColor: theme.border }} onPress={openEditModal}>
+                  <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
+                    Edit Profile
+                  </Text>
+                </Pressable>
+                <Pressable className="flex-1 rounded-full py-3" style={{ backgroundColor: theme.primary }}>
+                  <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.textOnPrimary }}>
+                    Share Closet
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+
+          <View className="mx-4 mt-4 rounded-3xl border px-4 py-4" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+            <View className="flex-row items-center justify-between">
+              {[
+                { label: 'Followers', value: formatCompact(followersCount) },
+                { label: 'Following', value: formatCompact(followingCount) },
+                { label: 'Listings', value: formatCompact(listingsCount) },
+              ].map((stat) => (
+                <View key={stat.label} className="items-center">
+                  <Text className="text-lg font-bold" style={{ color: theme.text }}>
+                    {stat.value}
+                  </Text>
+                  <Text className="text-[9px] font-extrabold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
+                    {stat.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View className="mt-6 px-4">
+            <View className="mb-4 flex-row items-center justify-between">
+              <Text className="text-4xl font-light italic" style={{ color: theme.text }}>
+                My Closet
+              </Text>
+              <Text className="text-lg font-semibold" style={{ color: theme.primary }}>
+                {listingsCount}
+              </Text>
+            </View>
+            <View className="flex-row flex-wrap justify-between">
+              {renderedCloset.map((item) => (
+                <View key={item.id} className="mb-6 w-[48%]">
+                  <View className="aspect-[3/4] overflow-hidden rounded-2xl" style={{ backgroundColor: theme.surface }}>
+                    <Image source={{ uri: item.image }} contentFit="cover" className="h-full w-full" />
+                  </View>
+                  <Text className="mt-2 text-[9px] font-bold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
+                    {item.subtitle}
+                  </Text>
+                  <Text className="mt-1 text-sm" numberOfLines={1} style={{ color: theme.text }}>
+                    {item.title}
+                  </Text>
+                  <Text className="mt-0.5 text-base font-bold" style={{ color: theme.primary }}>
+                    {item.priceLabel}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+      )}
+
+      <Modal visible={editing} transparent animationType="fade" onRequestClose={closeEditModal}>
+        <View className="flex-1 items-center justify-center px-4">
+          <Pressable className="absolute inset-0 bg-black/55" onPress={closeEditModal} />
+          <View className="w-full max-w-[420px] rounded-3xl border p-4" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="text-lg font-semibold" style={{ color: theme.text }}>
+                Edit profile
+              </Text>
+              <Pressable className="h-8 w-8 items-center justify-center rounded-full" onPress={closeEditModal} style={{ backgroundColor: theme.surfaceMuted }}>
+                <MaterialIcons name="close" size={18} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <View className="mb-4 items-center">
+              <View className="h-20 w-20 overflow-hidden rounded-full border p-1.5" style={{ borderColor: theme.border }}>
+                <Image key={`modal-${avatarImage}`} source={{ uri: avatarImage }} contentFit="cover" className="h-full w-full rounded-full" />
+              </View>
+              <Pressable
+                className="mt-2 rounded-full border px-4 py-2"
+                style={{ borderColor: theme.border }}
+                onPress={uploadAvatar}
+                disabled={uploadingAvatar}>
+                <Text className="text-[10px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
+                  {uploadingAvatar ? 'Uploading...' : 'Change Picture'}
+                </Text>
+              </Pressable>
+            </View>
+
             <TextInput
               value={form.username}
               onChangeText={(value) => setForm((prev) => ({ ...prev, username: value }))}
               placeholder="Username"
               placeholderTextColor={theme.textMuted}
-              className="mb-3 rounded-xl border px-3 py-2"
-              style={{ color: theme.text, borderColor: theme.border }}
+              className="mb-3 rounded-xl border px-3 py-2.5"
+              style={{ color: theme.text, borderColor: theme.border, backgroundColor: theme.background }}
             />
             <TextInput
               value={form.location}
               onChangeText={(value) => setForm((prev) => ({ ...prev, location: value }))}
               placeholder="Location"
               placeholderTextColor={theme.textMuted}
-              className="mb-3 rounded-xl border px-3 py-2"
-              style={{ color: theme.text, borderColor: theme.border }}
+              className="mb-3 rounded-xl border px-3 py-2.5"
+              style={{ color: theme.text, borderColor: theme.border, backgroundColor: theme.background }}
             />
             <TextInput
               value={form.instagram}
               onChangeText={(value) => setForm((prev) => ({ ...prev, instagram: value }))}
               placeholder="Instagram handle"
               placeholderTextColor={theme.textMuted}
-              className="mb-3 rounded-xl border px-3 py-2"
-              style={{ color: theme.text, borderColor: theme.border }}
+              className="mb-3 rounded-xl border px-3 py-2.5"
+              style={{ color: theme.text, borderColor: theme.border, backgroundColor: theme.background }}
             />
             <TextInput
               value={form.bio}
@@ -322,8 +421,8 @@ export default function ProfileScreen() {
               placeholder="Bio"
               placeholderTextColor={theme.textMuted}
               multiline
-              className="mb-3 min-h-20 rounded-xl border px-3 py-2"
-              style={{ color: theme.text, borderColor: theme.border, textAlignVertical: 'top' }}
+              className="mb-3 min-h-20 rounded-xl border px-3 py-2.5"
+              style={{ color: theme.text, borderColor: theme.border, backgroundColor: theme.background, textAlignVertical: 'top' }}
             />
             <Pressable className="rounded-full py-3" style={{ backgroundColor: theme.primary }} onPress={saveProfile} disabled={saving}>
               <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.textOnPrimary }}>
@@ -331,57 +430,8 @@ export default function ProfileScreen() {
               </Text>
             </Pressable>
           </View>
-        ) : null}
-
-        <View className="mx-6 mt-8 flex-row items-center justify-between rounded-2xl border px-4 py-4" style={{ borderColor: theme.border }}>
-          {[
-            { label: 'Followers', value: '1.2k' },
-            { label: 'Following', value: '850' },
-            { label: 'Listings', value: String(listingsCount) },
-          ].map((stat) => (
-            <View key={stat.label} className="items-center">
-              <Text className="text-lg font-bold" style={{ color: theme.text }}>
-                {stat.value}
-              </Text>
-              <Text className="text-[9px] font-extrabold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
-                {stat.label}
-              </Text>
-            </View>
-          ))}
         </View>
-
-        <View className="mt-8 flex-row flex-wrap justify-between px-6">
-          {renderedCloset.map((item) => (
-            <View key={item.id} className="mb-8 w-[48%]">
-              <View className="aspect-[3/4] overflow-hidden rounded-2xl" style={{ backgroundColor: theme.surface }}>
-                <Image source={{ uri: item.image }} contentFit="cover" className="h-full w-full" />
-              </View>
-              <Text className="mt-3 text-[9px] font-bold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
-                {item.subtitle}
-              </Text>
-              <View className="mt-1 flex-row items-center justify-between">
-                <Text className="text-sm" style={{ color: theme.text }}>
-                  {item.title}
-                </Text>
-                <Text className="text-sm font-bold" style={{ color: theme.text }}>
-                  {item.priceLabel}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-
-      <Pressable
-        className="absolute right-6 top-14 rounded-full px-4 py-2"
-        style={{ backgroundColor: theme.primary }}
-        onPress={logout}>
-        <Text className="text-xs font-bold uppercase tracking-[1px]" style={{ color: theme.textOnPrimary }}>
-          Logout
-        </Text>
-      </Pressable>
-      </Animated.View>
-      )}
+      </Modal>
     </View>
   );
 }

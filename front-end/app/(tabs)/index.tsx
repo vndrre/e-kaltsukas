@@ -58,14 +58,15 @@ export default function HomeScreen() {
       </ScrollView>
 
       {menuVisible ? (
-        <View className="absolute inset-0 z-50">
+        <View className="absolute inset-0 z-40">
           <Pressable className="absolute inset-0" onPress={closeMenu}>
             <Animated.View className="h-full w-full bg-black" style={{ opacity: backdropOpacity }} />
           </Pressable>
 
           <Animated.View
-            className="absolute left-0 top-0 h-full"
+            className="absolute bottom-0 left-0 top-0"
             style={{
+              height: '100%',
               transform: [{ translateX: drawerTranslateX }],
             }}>
             <MenuDrawer onClose={closeMenu} />

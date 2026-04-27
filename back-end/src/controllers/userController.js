@@ -71,15 +71,29 @@ const updateMe = async (req, res) => {
       username: username?.trim() || null,
       bio: bio?.trim() || null,
       location: location?.trim() || null,
-      instagram: instagram?.trim() || null,
-      avatar_url: typeof avatarUrl === "string" && avatarUrl.trim() ? avatarUrl.trim() : null
+      instagram: instagram?.trim() || null
     };
 
-    const { data: updatedProfile, error: updateError } = await db
+    // Do not clear avatar_url on normal profile edits.
+    // Only update avatar_url when the client explicitly sends avatarUrl.
+    if (typeof avatarUrl === "string") {
+      payload.avatar_url = avatarUrl.trim() || null;
+    }
+
+    let { data: updatedProfile, error: updateError } = await db
       .from("profiles")
-      .upsert(payload, { onConflict: "id" })
+      .update(payload)
+      .eq("id", userId)
       .select(profileSelectFields)
-      .single();
+      .maybeSingle();
+
+    if (!updateError && !updatedProfile) {
+      ({ data: updatedProfile, error: updateError } = await db
+        .from("profiles")
+        .insert(payload)
+        .select(profileSelectFields)
+        .single());
+    }
 
     if (updateError) {
       console.error("updateMe error", updateError);
@@ -120,26 +134,37 @@ const uploadMyAvatar = async (req, res) => {
     });
 
     const db = supabaseAdmin || supabase;
-    const { data: updatedProfile, error: updateError } = await db
+    const avatarPayload = {
+      id: userId,
+      email: req.user.email || null,
+      avatar_url: uploadResult.secure_url
+    };
+
+    let { data: updatedProfile, error: updateError } = await db
       .from("profiles")
-      .upsert(
-        {
-          id: userId,
-          email: req.user.email || null,
-          avatar_url: uploadResult.secure_url
-        },
-        { onConflict: "id" }
-      )
+      .update(avatarPayload)
+      .eq("id", userId)
       .select(profileSelectFields)
-      .single();
+      .maybeSingle();
+
+    if (!updateError && !updatedProfile) {
+      ({ data: updatedProfile, error: updateError } = await db
+        .from("profiles")
+        .insert(avatarPayload)
+        .select(profileSelectFields)
+        .single());
+    }
 
     if (updateError) {
       console.error("uploadMyAvatar profile update error", updateError);
       const isMissingAvatarColumn =
         updateError.code === "42703" || /avatar_url/i.test(updateError.message || "");
+      const isRlsError = /row-level security/i.test(updateError.message || "");
       return res.status(500).json({
         message: isMissingAvatarColumn
           ? "Database column profiles.avatar_url is missing. Run back-end/supabase/auth-profile-setup.sql in Supabase."
+          : isRlsError
+            ? "Supabase RLS blocked profile update. Add SUPABASE_SERVICE_ROLE_KEY in back-end/.env or add RLS policies allowing users to update their own profile row."
           : updateError.message || "Failed to persist avatar URL"
       });
     }

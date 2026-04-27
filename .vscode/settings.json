@@ -1,8 +1,0 @@
-{
-    "chat.tools.terminal.autoApprove": {
-        "/^wsl -e bash -lc 'export NVM_DIR=\"\\$HOME/\\.nvm\"; \\[ -s \"\\$NVM_DIR/nvm\\.sh\" \\] && \\. \"\\$NVM_DIR/nvm\\.sh\"; cd /home/kaspar/e-kaltsukas/front-end && node -v && npm -v && node -e '\\\\''require\\(\"expo/config-plugins\"\\) ; console\\.log\\(\"expo-config ok\"\\)'\\\\'' '$/": {
-            "approve": true,
-            "matchCommandLine": true
-        }
-    }
-}
