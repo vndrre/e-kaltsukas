@@ -52,6 +52,7 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [listings, setListings] = useState<ListingItem[]>([]);
   const [form, setForm] = useState({
@@ -248,14 +249,17 @@ export default function ProfileScreen() {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
           <View
-            className="px-4 pb-4 pt-12"
+            className="px-4 pb-4 pt-8"
             style={{ backgroundColor: theme.background, borderBottomColor: theme.border, borderBottomWidth: 1 }}>
             <View className="flex-row items-center justify-between">
               <Text className="text-2xl font-bold italic" style={{ color: theme.primary }}>
                 Profile
               </Text>
               
-              <Pressable className="h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: theme.surfaceMuted }}>
+              <Pressable
+                className="h-9 w-9 items-center justify-center rounded-full"
+                style={{ backgroundColor: theme.surfaceMuted }}
+                onPress={() => setSettingsVisible(true)}>
                 <MaterialIcons name="settings" size={20} color={theme.text} />
               </Pressable>
             </View>
@@ -428,6 +432,37 @@ export default function ProfileScreen() {
             <Pressable className="rounded-full py-3" style={{ backgroundColor: theme.primary }} onPress={saveProfile} disabled={saving}>
               <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.textOnPrimary }}>
                 {saving ? 'Saving...' : 'Save Changes'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={settingsVisible} transparent animationType="fade" onRequestClose={() => setSettingsVisible(false)}>
+        <View className="flex-1 items-center justify-center px-6">
+          <Pressable className="absolute inset-0 bg-black/55" onPress={() => setSettingsVisible(false)} />
+          <View className="w-full max-w-[340px] rounded-3xl border p-4" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="text-lg font-semibold" style={{ color: theme.text }}>
+                Settings
+              </Text>
+              <Pressable
+                className="h-8 w-8 items-center justify-center rounded-full"
+                onPress={() => setSettingsVisible(false)}
+                style={{ backgroundColor: theme.surfaceMuted }}>
+                <MaterialIcons name="close" size={18} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <Pressable
+              className="rounded-xl px-4 py-3"
+              style={{ backgroundColor: theme.surfaceMuted }}
+              onPress={() => {
+                setSettingsVisible(false);
+                logout();
+              }}>
+              <Text className="text-sm font-semibold" style={{ color: theme.text }}>
+                Sign out
               </Text>
             </Pressable>
           </View>

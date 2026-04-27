@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import { HomeHeader } from '@/components/home/home-header';
 import { ProductItem, RecommendedItem } from '@/components/home/types';
@@ -24,6 +25,7 @@ type ApiItem = {
 
 export default function HomeScreen() {
   const { theme } = useAppTheme();
+  const router = useRouter();
   const [menuVisible, setMenuVisible] = useState(false);
   const [isLoadingFeed, setIsLoadingFeed] = useState(true);
   const [arrivalItems, setArrivalItems] = useState<ProductItem[]>(newArrivals);
@@ -129,7 +131,7 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <HomeHeader onMenuPress={openMenu} />
+      <HomeHeader onMenuPress={openMenu} onCartPress={() => router.push('/cart')} cartCount={3} />
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
         {isLoadingFeed ? (
