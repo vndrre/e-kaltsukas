@@ -10,41 +10,6 @@ import { api } from '@/lib/api';
 const profileImage =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCatomNVqLWwf1u2rVVhjW53qRac0tdL2zeeN6RB7zqZjsrSXsVmQxBQscuEZIqrZY9EzceU8JTPV24fVYk2BHmoDfFC1Yf4xFg-6LfRqUx3HQGVFyT7_ERwVeYniYj7M9X-8IfzHPBaetYSo5ns0oaCJEW3JoKUK6wwbzI-zch26d-99IuLdGj3pVP6JXBjw_J_Xcwn1Aym1P1wMg_lfZidgVYHPaELyZRiqBj4N91Ux2kDwVXt7p9339oM_xQKFwgocpczuEvvSk';
 
-const closetItems = [
-  {
-    id: '1',
-    name: 'Trench Coat',
-    brand: 'Vintage',
-    price: '$125',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuB0dikOOSBbdKKE9NyzUX9SSi3bmRjM_7p34kkUhFqYm-1lVPxb_39E0isvPBMQJeblfyUJqXmja6QFSHVLRx-59pbmWe7nFwJrBLNciuUGqK_evF8oMpFsQwzVsj4Lu3K36f5jQ2fBb2as--CzITjFBPYslNeWYp9pb3GiUn8Ds4hfT_E-D6AfVgQQ3yEEMGK1nS0MY_t4H25XeumvBTwE9RRZQxRIN7jwEBJsuw9hN18mzWN2qMImnuTii4WgyBh8ASTY_SXzMS4',
-  },
-  {
-    id: '2',
-    name: 'Denim Jeans',
-    brand: "Levi's",
-    price: '$45',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuD2N_bCbF03AjR7FfoaXc05lqQOfdfJCa5SCG4hh8LVIS9_YYibBoSJ2xvL-1lardtngD94B_-Jp1PUbO7TIRnnY1pXMLPAeVsOTLJh8f8EXOS5fTaGeG7TpMvMqBo3OhMYGDzORw4z9wLXv0qGuyK6pWeCZgw743qcIUtepRacpblBorM96-hLFc6aWBeblqngFWVYQJ6FamBMPsZMqgNyKty9rZ-24GGcY1LgHaW_yZj6fXIfyrw3FG3OLlDLpgCD54uj1LGBT8U',
-  },
-  {
-    id: '3',
-    name: 'Minimal Watch',
-    brand: 'Essentials',
-    price: '$89',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuDdknah9SaHt4LedFSlnvndrhTlAb-fuU59jl6am82eZlCFspK0LxoEd0qSKjV6Qp7hZNu_jf_7CeWOZZeKI5aMWhrLIwkUuQuNVa3Zmevg3ec95VlmEWeldWRdDre1792IYGh7HFRM2qkJgqctILF0eLnoTvXWscta_hmdD3HqBm17DA_QzqDOS_5kTfyE_pGI8eo_zYTTFRHPhe8vbp9yOkD-BpSKbrbDfhpEmyFVsZZB48vBBagnJC9bMZC7VQov65kl6-MYWsI',
-  },
-  {
-    id: '4',
-    name: 'Leather Boots',
-    brand: 'Handmade',
-    price: '$210',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuAgkaegsPWOIQIrbmgSP4h5Gb6LJA3mIxbdSdfevPcoChIT4A9bAyHcPhtdmYYcFCNpbLIhEx4_VznhPgUb18FFWS-t0cddp9_idaMpUcU8WvJ2f4gid2XuFBGqI8WQejUHUXp4nhKZ2DuFWqgM7n1Vor-iMAKaPwx_ArYiTXNq3epc1TK-api1003D60DmnpRwjwhCCVEbG1lpp_QA8-gAMnQl9Jcu6uJBpT3I2aKfPZwTCQVCG2-YdWOvsZqMOHhjegJmSxFNraE',
-  },
-];
-
 type DbProfile = {
   id: string;
   username: string | null;
@@ -52,15 +17,21 @@ type DbProfile = {
   location: string | null;
   instagram: string | null;
   avatar_url: string | null;
+  closet_name?: string | null;
+  closet_description?: string | null;
+  style_tags?: string[] | null;
   followers_count?: number | null;
   following_count?: number | null;
 };
 
 type ListingItem = {
   id: string;
+  seller_id?: string;
   title: string;
   brand?: string | null;
   category?: string | null;
+  condition?: string | null;
+  size?: string | null;
   price: number;
   images?: string[];
 };
@@ -69,6 +40,7 @@ type ClosetCard = {
   id: string;
   title: string;
   subtitle: string;
+  meta: string[];
   priceLabel: string;
   image: string;
 };
@@ -82,7 +54,12 @@ export default function ProfileScreen() {
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [listings, setListings] = useState<ListingItem[]>([]);
-  const [form, setForm] = useState({ username: '', bio: '', location: '', instagram: '' });
+  const [form, setForm] = useState({
+    username: '',
+    bio: '',
+    location: '',
+    instagram: '',
+  });
   const [avatarRefreshToken, setAvatarRefreshToken] = useState(0);
 
   const headers = useMemo(
@@ -100,13 +77,14 @@ export default function ProfileScreen() {
       }
 
       try {
-        const [profileRes, listingsRes] = await Promise.all([
-          api.get('/users/me', { headers }),
-          api.get('/items', { params: { sellerId: user.id } }),
-        ]);
-
+        const profileRes = await api.get('/users/me', { headers });
         const nextProfile = (profileRes.data?.user ?? null) as DbProfile | null;
-        const dbListings = (listingsRes.data?.items ?? []) as ListingItem[];
+        const sellerId = nextProfile?.id || user.id;
+
+        const listingsRes = await api.get('/items', { params: { sellerId } });
+        const dbListings = ((listingsRes.data?.items ?? []) as ListingItem[]).filter(
+          (item) => !item.seller_id || item.seller_id === sellerId
+        );
 
         setProfile(nextProfile);
         setListings(dbListings);
@@ -132,7 +110,14 @@ export default function ProfileScreen() {
     }
     try {
       setSaving(true);
-      const response = await api.put('/users/me', form, { headers });
+      const payload = {
+        username: form.username,
+        bio: form.bio,
+        location: form.location,
+        instagram: form.instagram,
+      };
+
+      const response = await api.put('/users/me', payload, { headers });
       const nextProfile = response.data?.user as DbProfile;
       setProfile(nextProfile);
       setEditing(false);
@@ -234,21 +219,16 @@ export default function ProfileScreen() {
   const avatarImage = avatarImageRaw.startsWith('http')
     ? `${avatarImageRaw}${avatarImageRaw.includes('?') ? '&' : '?'}v=${avatarRefreshToken}`
     : avatarImageRaw;
-  const renderedCloset: ClosetCard[] = listings.length
-    ? listings.map((item) => ({
-        id: item.id,
-        title: item.title,
-        subtitle: item.brand ?? item.category ?? 'Listing',
-        priceLabel: `$${item.price.toFixed(2)}`,
-        image: item.images?.[0] ?? profileImage,
-      }))
-    : closetItems.map((item) => ({
-        id: item.id,
-        title: item.name,
-        subtitle: item.brand,
-        priceLabel: item.price,
-        image: item.image,
-      }));
+  const renderedCloset: ClosetCard[] = listings.map((item) => ({
+    id: item.id,
+    title: item.title,
+    subtitle: item.brand ?? item.category ?? 'Listing',
+    meta: [item.category, item.size, item.condition]
+      .filter((value): value is string => Boolean(value && value.trim()))
+      .map((value) => value.trim()),
+    priceLabel: `$${item.price.toFixed(2)}`,
+    image: item.images?.[0] ?? profileImage,
+  }));
   const listingsCount = listings.length;
   const followersCount = Number.isFinite(profile?.followers_count as number) ? Number(profile?.followers_count) : 0;
   const followingCount = Number.isFinite(profile?.following_count as number) ? Number(profile?.following_count) : 0;
@@ -350,6 +330,20 @@ export default function ProfileScreen() {
                   <Text className="mt-2 text-[9px] font-bold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
                     {item.subtitle}
                   </Text>
+                  {item.meta.length ? (
+                    <View className="mt-1 flex-row flex-wrap">
+                      {item.meta.map((meta) => (
+                        <View
+                          key={`${item.id}-${meta}`}
+                          className="mb-1 mr-1 rounded-full px-2 py-1"
+                          style={{ backgroundColor: theme.surfaceMuted }}>
+                          <Text className="text-[10px] font-semibold uppercase" style={{ color: theme.textMuted }}>
+                            {meta}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
                   <Text className="mt-1 text-sm" numberOfLines={1} style={{ color: theme.text }}>
                     {item.title}
                   </Text>
@@ -359,6 +353,13 @@ export default function ProfileScreen() {
                 </View>
               ))}
             </View>
+            {!renderedCloset.length ? (
+              <View className="rounded-2xl border px-4 py-8" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+                <Text className="text-center text-sm" style={{ color: theme.textMuted }}>
+                  No items in your closet yet. Add a listing from the Sell tab and it will appear here.
+                </Text>
+              </View>
+            ) : null}
           </View>
         </ScrollView>
       )}

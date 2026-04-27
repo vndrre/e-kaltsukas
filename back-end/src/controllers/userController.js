@@ -2,7 +2,8 @@ const { supabase, supabaseAdmin } = require("../services/supabaseClient");
 const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
 const { env } = require("../config/env");
 
-const profileSelectFields = "id, username, bio, location, instagram, avatar_url, created_at";
+const profileSelectFields =
+  "id, username, bio, location, instagram, avatar_url, closet_name, closet_description, style_tags, created_at";
 
 const getMe = async (req, res) => {
   try {
@@ -62,7 +63,7 @@ const updateMe = async (req, res) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { username, bio, location, instagram, avatarUrl } = req.body || {};
+    const { username, bio, location, instagram, avatarUrl, closetName, closetDescription, styleTags } = req.body || {};
     const db = supabaseAdmin || supabase;
 
     const payload = {
@@ -71,8 +72,17 @@ const updateMe = async (req, res) => {
       username: username?.trim() || null,
       bio: bio?.trim() || null,
       location: location?.trim() || null,
-      instagram: instagram?.trim() || null
+      instagram: instagram?.trim() || null,
+      closet_name: closetName?.trim() || null,
+      closet_description: closetDescription?.trim() || null
     };
+
+    if (Array.isArray(styleTags)) {
+      payload.style_tags = styleTags
+        .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 8);
+    }
 
     // Do not clear avatar_url on normal profile edits.
     // Only update avatar_url when the client explicitly sends avatarUrl.

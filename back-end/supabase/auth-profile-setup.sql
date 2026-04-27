@@ -6,6 +6,11 @@ alter table public.profiles enable row level security;
 alter table public.profiles
   add column if not exists avatar_url text;
 
+alter table public.profiles
+  add column if not exists closet_name text,
+  add column if not exists closet_description text,
+  add column if not exists style_tags text[] default '{}'::text[];
+
 create or replace function public.handle_new_user_profile()
 returns trigger
 language plpgsql
