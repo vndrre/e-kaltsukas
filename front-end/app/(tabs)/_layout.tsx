@@ -3,7 +3,7 @@ import { PlatformPressable } from '@react-navigation/elements';
 import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
-import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useAuth } from '@/hooks/auth-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
@@ -104,6 +104,7 @@ function SellTabBarButton(props: BottomTabBarButtonProps) {
   const { theme } = useAppTheme();
   const isSelected = props['aria-selected'] === true;
   const colorProgress = React.useRef(new Animated.Value(isSelected ? 1 : 0)).current;
+  const scaleProgress = React.useRef(new Animated.Value(isSelected ? 1 : 0)).current;
 
   React.useEffect(() => {
     Animated.timing(colorProgress, {
@@ -112,6 +113,16 @@ function SellTabBarButton(props: BottomTabBarButtonProps) {
       useNativeDriver: false,
     }).start();
   }, [colorProgress, isSelected]);
+
+  React.useEffect(() => {
+    Animated.spring(scaleProgress, {
+      toValue: isSelected ? 1 : 0,
+      damping: 18,
+      mass: 0.7,
+      stiffness: 280,
+      useNativeDriver: true,
+    }).start();
+  }, [isSelected, scaleProgress]);
 
   const activeIconOpacity = colorProgress;
   const inactiveIconOpacity = colorProgress.interpolate({
@@ -130,6 +141,10 @@ function SellTabBarButton(props: BottomTabBarButtonProps) {
     inputRange: [0, 1],
     outputRange: [theme.textMuted, theme.primary],
   });
+  const buttonScale = scaleProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.9, 1.08],
+  });
 
   return (
     <AnimatedTabBarButton {...props} activeLift={-11} activeScale={1.04} showActiveGlow={false} style={[props.style, styles.sellButtonContainer]}>
@@ -140,6 +155,7 @@ function SellTabBarButton(props: BottomTabBarButtonProps) {
             backgroundColor,
             borderColor,
             shadowColor: theme.primary,
+            transform: [{ scale: buttonScale }],
           },
         ]}>
         <Animated.View style={[styles.sellIconLayer, { opacity: inactiveIconOpacity }]}>
@@ -157,6 +173,10 @@ function SellTabBarButton(props: BottomTabBarButtonProps) {
 export default function TabLayout() {
   const { theme } = useAppTheme();
   const { isHydrated, isAuthenticated } = useAuth();
+  const { width } = useWindowDimensions();
+  const sideMargin = width < 380 ? 14 : 22;
+  const tabBarWidth = Math.min(Math.max(width - sideMargin * 2, 280), 460);
+  const tabBarLeft = (width - tabBarWidth) / 2;
 
   if (!isHydrated) {
     return (
@@ -182,7 +202,9 @@ export default function TabLayout() {
           {
             backgroundColor: theme.surface,
             borderColor: theme.border,
+            left: tabBarLeft,
             shadowColor: theme.text,
+            width: tabBarWidth,
           },
         ],
         tabBarLabelStyle: styles.tabLabel,
@@ -231,23 +253,22 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    borderRadius: 30,
+    borderRadius: 24,
     borderWidth: 1,
     bottom: 14,
     elevation: 14,
     height: 86,
-    left: 16,
     paddingBottom: 12,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingTop: 13,
     position: 'absolute',
-    right: 16,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.16,
     shadowRadius: 24,
   },
   tabBarItem: {
-    borderRadius: 24,
+    borderRadius: 18,
+    marginHorizontal: 4,
     overflow: 'visible',
     paddingHorizontal: 2,
   },
@@ -263,15 +284,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 56,
-    minWidth: 64,
+    minWidth: 52,
   },
   activeTabGlow: {
-    borderRadius: 22,
+    borderRadius: 16,
     borderWidth: 1,
     bottom: 0,
-    left: -3,
+    left: -1,
     position: 'absolute',
-    right: -3,
+    right: -1,
     top: 0,
   },
   sellButtonContainer: {
@@ -301,6 +322,6 @@ const styles = StyleSheet.create({
   sellLabel: {
     fontSize: 11,
     fontWeight: '700',
-    marginTop: 3,
+    marginTop: 1.8,
   },
 });
