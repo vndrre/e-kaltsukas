@@ -45,6 +45,13 @@ type ClosetCard = {
   image: string;
 };
 
+type FollowUser = {
+  id: string;
+  username?: string | null;
+  avatar_url?: string | null;
+  isFollowing?: boolean;
+};
+
 export default function ProfileScreen() {
   const { theme } = useAppTheme();
   const { user, token, logout } = useAuth();
@@ -62,6 +69,9 @@ export default function ProfileScreen() {
     instagram: '',
   });
   const [avatarRefreshToken, setAvatarRefreshToken] = useState(0);
+  const [followers, setFollowers] = useState<FollowUser[]>([]);
+  const [following, setFollowing] = useState<FollowUser[]>([]);
+  const [activeFollowList, setActiveFollowList] = useState<'followers' | 'following' | null>(null);
 
   const headers = useMemo(
     () => ({
@@ -82,13 +92,19 @@ export default function ProfileScreen() {
         const nextProfile = (profileRes.data?.user ?? null) as DbProfile | null;
         const sellerId = nextProfile?.id || user.id;
 
-        const listingsRes = await api.get('/items', { params: { sellerId } });
+        const [listingsRes, followersRes, followingRes] = await Promise.all([
+          api.get('/items', { params: { sellerId } }),
+          api.get(`/users/${sellerId}/followers`, { headers, params: { limit: 50, offset: 0 } }),
+          api.get(`/users/${sellerId}/following`, { headers, params: { limit: 50, offset: 0 } }),
+        ]);
         const dbListings = ((listingsRes.data?.items ?? []) as ListingItem[]).filter(
           (item) => !item.seller_id || item.seller_id === sellerId
         );
 
         setProfile(nextProfile);
         setListings(dbListings);
+        setFollowers((followersRes.data?.users ?? []) as FollowUser[]);
+        setFollowing((followingRes.data?.users ?? []) as FollowUser[]);
         setForm({
           username: nextProfile?.username ?? '',
           bio: nextProfile?.bio ?? '',
@@ -240,6 +256,38 @@ export default function ProfileScreen() {
       maximumFractionDigits: 1,
     }).format(Math.max(0, value));
 
+  const toggleFollowFromList = async (entry: FollowUser) => {
+    if (entry.id === user?.id) {
+      return;
+    }
+
+    const listType = activeFollowList;
+    const updateList = (updater: (target: FollowUser) => FollowUser) => {
+      if (listType === 'followers') {
+        setFollowers((prev) => prev.map((item) => (item.id === entry.id ? updater(item) : item)));
+      } else {
+        setFollowing((prev) => prev.map((item) => (item.id === entry.id ? updater(item) : item)));
+      }
+    };
+
+    const wasFollowing = Boolean(entry.isFollowing);
+    const nextFollowingCount = Math.max(0, followingCount + (wasFollowing ? -1 : 1));
+    updateList((target) => ({ ...target, isFollowing: !wasFollowing }));
+    setProfile((prev) => (prev ? { ...prev, following_count: nextFollowingCount } : prev));
+
+    try {
+      if (wasFollowing) {
+        await api.delete(`/users/${entry.id}/follow`, { headers });
+      } else {
+        await api.post(`/users/${entry.id}/follow`, {}, { headers });
+      }
+    } catch (error: any) {
+      updateList((target) => ({ ...target, isFollowing: wasFollowing }));
+      setProfile((prev) => (prev ? { ...prev, following_count: followingCount } : prev));
+      Alert.alert('Error', error?.response?.data?.message || 'Failed to update follow status.');
+    }
+  };
+
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
       {loading ? (
@@ -300,18 +348,18 @@ export default function ProfileScreen() {
           <View className="mx-4 mt-4 rounded-3xl border px-4 py-4" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
             <View className="flex-row items-center justify-between">
               {[
-                { label: 'Followers', value: formatCompact(followersCount) },
-                { label: 'Following', value: formatCompact(followingCount) },
-                { label: 'Listings', value: formatCompact(listingsCount) },
+                { label: 'Followers', value: formatCompact(followersCount), press: () => setActiveFollowList('followers') },
+                { label: 'Following', value: formatCompact(followingCount), press: () => setActiveFollowList('following') },
+                { label: 'Listings', value: formatCompact(listingsCount), press: undefined },
               ].map((stat) => (
-                <View key={stat.label} className="items-center">
+                <Pressable key={stat.label} className="items-center" onPress={stat.press}>
                   <Text className="text-lg font-bold" style={{ color: theme.text }}>
                     {stat.value}
                   </Text>
                   <Text className="text-[9px] font-extrabold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
                     {stat.label}
                   </Text>
-                </View>
+                </Pressable>
               ))}
             </View>
           </View>
@@ -465,6 +513,49 @@ export default function ProfileScreen() {
                 Sign out
               </Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={activeFollowList !== null} transparent animationType="fade" onRequestClose={() => setActiveFollowList(null)}>
+        <View className="flex-1 items-center justify-center px-5">
+          <Pressable className="absolute inset-0 bg-black/55" onPress={() => setActiveFollowList(null)} />
+          <View className="w-full max-w-[420px] rounded-3xl border p-4" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="text-lg font-semibold" style={{ color: theme.text }}>
+                {activeFollowList === 'followers' ? 'Followers' : 'Following'}
+              </Text>
+              <Pressable className="h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: theme.surfaceMuted }} onPress={() => setActiveFollowList(null)}>
+                <MaterialIcons name="close" size={18} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView className="max-h-80">
+              {(activeFollowList === 'followers' ? followers : following).map((entry) => (
+                <View key={entry.id} className="mb-2 flex-row items-center rounded-xl px-2 py-2" style={{ backgroundColor: theme.background }}>
+                  <Image source={{ uri: entry.avatar_url || profileImage }} contentFit="cover" className="h-9 w-9 rounded-full" />
+                  <Text className="ml-2 flex-1 text-sm font-semibold" style={{ color: theme.text }}>
+                    {entry.username || 'User'}
+                  </Text>
+
+                  {entry.id !== user?.id ? (
+                    <Pressable
+                      className="rounded-full px-3 py-1.5"
+                      style={{ backgroundColor: entry.isFollowing ? theme.surfaceMuted : theme.primary }}
+                      onPress={() => toggleFollowFromList(entry)}>
+                      <Text className="text-[10px] font-bold uppercase" style={{ color: entry.isFollowing ? theme.text : theme.textOnPrimary }}>
+                        {entry.isFollowing ? 'Following' : 'Follow'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+              {!(activeFollowList === 'followers' ? followers : following).length ? (
+                <Text className="text-sm" style={{ color: theme.textMuted }}>
+                  No users to show.
+                </Text>
+              ) : null}
+            </ScrollView>
           </View>
         </View>
       </Modal>

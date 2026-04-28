@@ -1,4 +1,5 @@
 import { MaterialIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
@@ -92,7 +93,7 @@ export default function InboxScreen() {
             return (
               <Pressable
                 key={conversation.id}
-                className="mb-3 rounded-2xl border p-4"
+                className="mb-3 flex-row rounded-2xl border p-3"
                 style={{ borderColor: theme.border, backgroundColor: theme.surface }}
                 onPress={() =>
                   router.push({
@@ -103,16 +104,28 @@ export default function InboxScreen() {
                     },
                   })
                 }>
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm font-semibold" style={{ color: theme.text }}>
-                    {conversation.item?.title || `Item: ${conversation.item_id.slice(0, 8)}`}
-                  </Text>
-                  <MaterialIcons name="chevron-right" size={18} color={theme.textMuted} />
+                <View className="h-16 w-16 overflow-hidden rounded-xl" style={{ backgroundColor: theme.surfaceMuted }}>
+                  {conversation.item?.image ? (
+                    <Image source={{ uri: conversation.item.image }} contentFit="cover" className="h-full w-full" />
+                  ) : (
+                    <View className="h-full w-full items-center justify-center">
+                      <MaterialIcons name="image" size={18} color={theme.textMuted} />
+                    </View>
+                  )}
                 </View>
-                <Text className="mt-1 text-xs" style={{ color: theme.textMuted }}>
-                  {isBuyer ? 'Seller' : 'Buyer'}:{' '}
-                  {conversation.counterpart?.username || counterpartId.slice(0, 8)}
-                </Text>
+
+                <View className="ml-3 flex-1 justify-center">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm font-semibold" numberOfLines={1} style={{ color: theme.text }}>
+                      {conversation.item?.title || `Item: ${conversation.item_id.slice(0, 8)}`}
+                    </Text>
+                    <MaterialIcons name="chevron-right" size={18} color={theme.textMuted} />
+                  </View>
+                  <Text className="mt-1 text-xs" numberOfLines={1} style={{ color: theme.textMuted }}>
+                    {isBuyer ? 'Seller' : 'Buyer'}:{' '}
+                    {conversation.counterpart?.username || counterpartId.slice(0, 8)}
+                  </Text>
+                </View>
               </Pressable>
             );
           })}

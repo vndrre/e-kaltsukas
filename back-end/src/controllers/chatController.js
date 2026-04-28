@@ -1,4 +1,44 @@
 const { supabase, supabaseAdmin } = require("../services/supabaseClient");
+const OFFER_PREFIX = "__OFFER__";
+
+function buildOfferBody(payload) {
+  return `${OFFER_PREFIX}${JSON.stringify(payload)}`;
+}
+
+function parseOfferBody(body) {
+  if (typeof body !== "string" || !body.startsWith(OFFER_PREFIX)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(body.slice(OFFER_PREFIX.length));
+    return parsed?.kind === "offer" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureConversationParticipant(db, conversationId, userId) {
+  const { data: conversation, error } = await db
+    .from("conversations")
+    .select("id, buyer_id, seller_id")
+    .eq("id", conversationId)
+    .maybeSingle();
+
+  if (error) {
+    return { error: error.message || "Failed to load conversation", conversation: null };
+  }
+
+  if (!conversation) {
+    return { error: "Conversation not found", status: 404, conversation: null };
+  }
+
+  if (conversation.buyer_id !== userId && conversation.seller_id !== userId) {
+    return { error: "Forbidden conversation", status: 403, conversation: null };
+  }
+
+  return { error: null, conversation };
+}
 
 const createOrGetConversation = async (req, res) => {
   try {
@@ -106,7 +146,7 @@ const listMyConversations = async (req, res) => {
 
     const [{ data: items }, { data: profiles }] = await Promise.all([
       itemIds.length
-        ? db.from("items").select("id, title, images_json").in("id", itemIds)
+        ? db.from("items").select("id, title, images_json, price_cents, price").in("id", itemIds)
         : Promise.resolve({ data: [] }),
       uniqueCounterpartIds.length
         ? db.from("profiles").select("id, username, avatar_url").in("id", uniqueCounterpartIds)
@@ -146,7 +186,13 @@ const listMyConversations = async (req, res) => {
               title: item.title || null,
               image: rawImages[0] || null
             }
-          : null
+          : null,
+        itemPrice:
+          typeof item?.price === "number"
+            ? item.price
+            : typeof item?.price_cents === "number"
+              ? item.price_cents / 100
+              : null
       };
     });
 
@@ -196,7 +242,7 @@ const getConversationById = async (req, res) => {
         .maybeSingle(),
       db
         .from("items")
-        .select("id, title, images_json")
+        .select("id, title, images_json, price_cents, price")
         .eq("id", conversation.item_id)
         .maybeSingle()
     ]);
@@ -228,7 +274,13 @@ const getConversationById = async (req, res) => {
               title: item.title || null,
               image: rawImages[0] || null
             }
-          : null
+          : null,
+        itemPrice:
+          typeof item?.price === "number"
+            ? item.price
+            : typeof item?.price_cents === "number"
+              ? item.price_cents / 100
+              : null
       }
     });
   } catch (err) {
@@ -343,10 +395,232 @@ const sendConversationMessage = async (req, res) => {
   }
 };
 
+const createOffer = async (req, res) => {
+  try {
+    const db = supabaseAdmin || supabase;
+    const userId = req.user?.id;
+    const { id: conversationId } = req.params;
+    const amount = Number(req.body?.amount);
+    const currency = typeof req.body?.currency === "string" ? req.body.currency.trim().toUpperCase() : "EUR";
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    if (Number.isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ message: "amount must be a valid number greater than 0" });
+    }
+
+    const access = await ensureConversationParticipant(db, conversationId, userId);
+    if (access.error) {
+      return res.status(access.status || 500).json({ message: access.error });
+    }
+
+    const offerPayload = {
+      kind: "offer",
+      amount: Number(amount.toFixed(2)),
+      currency,
+      status: "pending",
+      createdBy: userId,
+      updatedAt: new Date().toISOString()
+    };
+
+    const { data: message, error: messageError } = await db
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        sender_id: userId,
+        body: buildOfferBody(offerPayload)
+      })
+      .select("id, conversation_id, sender_id, body, created_at")
+      .single();
+
+    if (messageError) {
+      return res.status(500).json({ message: messageError.message || "Failed to create offer" });
+    }
+
+    await db
+      .from("conversations")
+      .update({ last_message_at: message.created_at })
+      .eq("id", conversationId);
+
+    return res.status(201).json({ message });
+  } catch (err) {
+    console.error("createOffer error", err);
+    return res.status(500).json({ message: "Failed to create offer" });
+  }
+};
+
+const updateOffer = async (req, res) => {
+  try {
+    const db = supabaseAdmin || supabase;
+    const userId = req.user?.id;
+    const { id: conversationId, messageId } = req.params;
+    const action = typeof req.body?.action === "string" ? req.body.action.trim().toLowerCase() : "";
+    const nextAmountRaw = req.body?.amount;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const access = await ensureConversationParticipant(db, conversationId, userId);
+    if (access.error) {
+      return res.status(access.status || 500).json({ message: access.error });
+    }
+
+    const { data: currentMessage, error: messageError } = await db
+      .from("messages")
+      .select("id, conversation_id, sender_id, body, created_at")
+      .eq("id", messageId)
+      .eq("conversation_id", conversationId)
+      .maybeSingle();
+
+    if (messageError) {
+      return res.status(500).json({ message: messageError.message || "Failed to load offer" });
+    }
+
+    if (!currentMessage) {
+      return res.status(404).json({ message: "Offer message not found" });
+    }
+
+    const offer = parseOfferBody(currentMessage.body);
+    if (!offer) {
+      return res.status(400).json({ message: "Message is not an offer" });
+    }
+
+    if (offer.status !== "pending") {
+      return res.status(400).json({ message: "Only pending offers can be updated" });
+    }
+
+    if (action === "accept" || action === "decline") {
+      if (currentMessage.sender_id === userId) {
+        return res.status(403).json({ message: "Sender cannot respond to own offer" });
+      }
+
+      const nextBody = buildOfferBody({
+        ...offer,
+        status: action === "accept" ? "accepted" : "declined",
+        respondedBy: userId,
+        respondedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      const { data: updated, error: updateError } = await db
+        .from("messages")
+        .update({ body: nextBody })
+        .eq("id", messageId)
+        .select("id, conversation_id, sender_id, body, created_at")
+        .single();
+
+      if (updateError) {
+        return res.status(500).json({ message: updateError.message || "Failed to respond to offer" });
+      }
+
+      return res.json({ message: updated });
+    }
+
+    if (action === "update") {
+      if (currentMessage.sender_id !== userId) {
+        return res.status(403).json({ message: "Only the sender can update this offer" });
+      }
+
+      const nextAmount = Number(nextAmountRaw);
+      if (Number.isNaN(nextAmount) || nextAmount <= 0) {
+        return res.status(400).json({ message: "amount must be a valid number greater than 0" });
+      }
+
+      const nextBody = buildOfferBody({
+        ...offer,
+        amount: Number(nextAmount.toFixed(2)),
+        updatedAt: new Date().toISOString()
+      });
+
+      const { data: updated, error: updateError } = await db
+        .from("messages")
+        .update({ body: nextBody })
+        .eq("id", messageId)
+        .select("id, conversation_id, sender_id, body, created_at")
+        .single();
+
+      if (updateError) {
+        return res.status(500).json({ message: updateError.message || "Failed to update offer" });
+      }
+
+      return res.json({ message: updated });
+    }
+
+    if (action === "counter") {
+      if (currentMessage.sender_id === userId) {
+        return res.status(403).json({ message: "Sender cannot counter own offer" });
+      }
+
+      const nextAmount = Number(nextAmountRaw);
+      if (Number.isNaN(nextAmount) || nextAmount <= 0) {
+        return res.status(400).json({ message: "amount must be a valid number greater than 0" });
+      }
+
+      const nextBody = buildOfferBody({
+        ...offer,
+        status: "countered",
+        respondedBy: userId,
+        respondedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      const { error: closeError } = await db
+        .from("messages")
+        .update({ body: nextBody })
+        .eq("id", messageId);
+
+      if (closeError) {
+        return res.status(500).json({ message: closeError.message || "Failed to counter offer" });
+      }
+
+      const newOfferPayload = {
+        kind: "offer",
+        amount: Number(nextAmount.toFixed(2)),
+        currency: offer.currency || "EUR",
+        status: "pending",
+        createdBy: userId,
+        parentOfferId: messageId,
+        updatedAt: new Date().toISOString()
+      };
+
+      const { data: newMessage, error: newError } = await db
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          sender_id: userId,
+          body: buildOfferBody(newOfferPayload)
+        })
+        .select("id, conversation_id, sender_id, body, created_at")
+        .single();
+
+      if (newError) {
+        return res.status(500).json({ message: newError.message || "Failed to create counter offer" });
+      }
+
+      await db
+        .from("conversations")
+        .update({ last_message_at: newMessage.created_at })
+        .eq("id", conversationId);
+
+      return res.json({ message: newMessage });
+    }
+
+    return res.status(400).json({ message: "Unsupported action" });
+  } catch (err) {
+    console.error("updateOffer error", err);
+    return res.status(500).json({ message: "Failed to update offer" });
+  }
+};
+
 module.exports = {
   createOrGetConversation,
   listMyConversations,
   getConversationById,
   listConversationMessages,
-  sendConversationMessage
+  sendConversationMessage,
+  createOffer,
+  updateOffer
 };

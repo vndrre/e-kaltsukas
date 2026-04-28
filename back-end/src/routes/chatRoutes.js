@@ -5,7 +5,9 @@ const {
   listMyConversations,
   getConversationById,
   listConversationMessages,
-  sendConversationMessage
+  sendConversationMessage,
+  createOffer,
+  updateOffer
 } = require("../controllers/chatController");
 
 const router = express.Router();
@@ -15,5 +17,7 @@ router.get("/conversations", authMiddleware, listMyConversations);
 router.get("/conversations/:id", authMiddleware, getConversationById);
 router.get("/conversations/:id/messages", authMiddleware, listConversationMessages);
 router.post("/conversations/:id/messages", authMiddleware, sendConversationMessage);
+router.post("/conversations/:id/offers", authMiddleware, createOffer);
+router.patch("/conversations/:id/offers/:messageId", authMiddleware, updateOffer);
 
 module.exports = router;

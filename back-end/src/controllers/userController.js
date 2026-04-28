@@ -48,7 +48,30 @@ const getMe = async (req, res) => {
       return res.status(404).json({ message: "User profile not found" });
     }
 
-    return res.json({ user: data });
+    const [
+      { count: followersCount, error: followersCountError },
+      { count: followingCount, error: followingCountError }
+    ] = await Promise.all([
+      db.from("user_follows").select("*", { count: "exact", head: true }).eq("following_id", userId),
+      db.from("user_follows").select("*", { count: "exact", head: true }).eq("follower_id", userId)
+    ]);
+
+    if (followersCountError || followingCountError) {
+      return res.status(500).json({
+        message:
+          followersCountError?.message ||
+          followingCountError?.message ||
+          "Failed to load follow counts"
+      });
+    }
+
+    return res.json({
+      user: {
+        ...data,
+        followers_count: followersCount ?? 0,
+        following_count: followingCount ?? 0
+      }
+    });
   } catch (err) {
     console.error("getMe error", err);
     return res.status(500).json({ message: "Failed to load profile" });
@@ -192,8 +215,329 @@ const uploadMyAvatar = async (req, res) => {
   }
 };
 
+const getPublicProfile = async (req, res) => {
+  try {
+    const viewerId = req.user?.id;
+    const profileId = req.params?.id;
+    const db = supabaseAdmin || supabase;
+
+    if (!viewerId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    if (!profileId) {
+      return res.status(400).json({ message: "Profile id is required" });
+    }
+
+    const { data: profile, error: profileError } = await db
+      .from("profiles")
+      .select(profileSelectFields)
+      .eq("id", profileId)
+      .maybeSingle();
+
+    if (profileError) {
+      return res.status(500).json({ message: profileError.message || "Failed to load profile" });
+    }
+
+    if (!profile) {
+      return res.status(404).json({ message: "Profile not found" });
+    }
+
+    const { data: listings, error: listingsError } = await db
+      .from("items")
+      .select(
+        "id, title, price_cents, condition, size, brand, category, images_json, seller_id, created_at"
+      )
+      .eq("seller_id", profileId)
+      .order("created_at", { ascending: false });
+
+    if (listingsError) {
+      return res.status(500).json({ message: listingsError.message || "Failed to load listings" });
+    }
+
+    const [
+      { count: followersCount, error: followersCountError },
+      { count: followingCount, error: followingCountError },
+      { data: followRow, error: followStatusError }
+    ] = await Promise.all([
+      db.from("user_follows").select("*", { count: "exact", head: true }).eq("following_id", profileId),
+      db.from("user_follows").select("*", { count: "exact", head: true }).eq("follower_id", profileId),
+      db
+        .from("user_follows")
+        .select("follower_id, following_id")
+        .eq("follower_id", viewerId)
+        .eq("following_id", profileId)
+        .maybeSingle()
+    ]);
+
+    if (followersCountError || followingCountError || followStatusError) {
+      return res.status(500).json({
+        message:
+          followersCountError?.message ||
+          followingCountError?.message ||
+          followStatusError?.message ||
+          "Failed to load follow data"
+      });
+    }
+
+    const normalizedListings = (listings ?? []).map((entry) => {
+      const rawImages = Array.isArray(entry.images_json)
+        ? entry.images_json
+        : typeof entry.images_json === "string"
+          ? (() => {
+              try {
+                const parsed = JSON.parse(entry.images_json);
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            })()
+          : [];
+
+      return {
+        id: entry.id,
+        title: entry.title,
+        condition: entry.condition,
+        size: entry.size,
+        brand: entry.brand,
+        category: entry.category,
+        seller_id: entry.seller_id,
+        image: rawImages[0] || null,
+        price: typeof entry.price_cents === "number" ? entry.price_cents / 100 : 0
+      };
+    });
+
+    return res.json({
+      profile: {
+        ...profile,
+        followers_count: followersCount ?? 0,
+        following_count: followingCount ?? 0
+      },
+      listings: normalizedListings,
+      isFollowing: Boolean(followRow)
+    });
+  } catch (err) {
+    console.error("getPublicProfile error", err);
+    return res.status(500).json({ message: "Failed to load profile" });
+  }
+};
+
+const followUser = async (req, res) => {
+  try {
+    const followerId = req.user?.id;
+    const followingId = req.params?.id;
+    const db = supabaseAdmin || supabase;
+
+    if (!followerId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    if (!followingId) {
+      return res.status(400).json({ message: "Profile id is required" });
+    }
+
+    if (followerId === followingId) {
+      return res.status(400).json({ message: "You cannot follow yourself" });
+    }
+
+    const { error } = await db.from("user_follows").upsert(
+      {
+        follower_id: followerId,
+        following_id: followingId
+      },
+      {
+        onConflict: "follower_id,following_id",
+        ignoreDuplicates: true
+      }
+    );
+
+    if (error) {
+      return res.status(500).json({ message: error.message || "Failed to follow user" });
+    }
+
+    return res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("followUser error", err);
+    return res.status(500).json({ message: "Failed to follow user" });
+  }
+};
+
+const unfollowUser = async (req, res) => {
+  try {
+    const followerId = req.user?.id;
+    const followingId = req.params?.id;
+    const db = supabaseAdmin || supabase;
+
+    if (!followerId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    if (!followingId) {
+      return res.status(400).json({ message: "Profile id is required" });
+    }
+
+    const { error } = await db
+      .from("user_follows")
+      .delete()
+      .eq("follower_id", followerId)
+      .eq("following_id", followingId);
+
+    if (error) {
+      return res.status(500).json({ message: error.message || "Failed to unfollow user" });
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("unfollowUser error", err);
+    return res.status(500).json({ message: "Failed to unfollow user" });
+  }
+};
+
+const listFollowers = async (req, res) => {
+  try {
+    const viewerId = req.user?.id;
+    const profileId = req.params?.id;
+    const db = supabaseAdmin || supabase;
+
+    if (!viewerId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const limit = Math.min(Math.max(Number(req.query?.limit) || 20, 1), 50);
+    const offset = Math.max(Number(req.query?.offset) || 0, 0);
+
+    const { data: rows, error, count } = await db
+      .from("user_follows")
+      .select("follower_id", { count: "exact" })
+      .eq("following_id", profileId)
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      return res.status(500).json({ message: error.message || "Failed to load followers" });
+    }
+
+    const followerIds = (rows ?? []).map((entry) => entry.follower_id);
+    if (!followerIds.length) {
+      return res.json({
+        users: [],
+        total: count ?? 0,
+        hasMore: false,
+        nextOffset: offset
+      });
+    }
+
+    const { data: users, error: usersError } = await db
+      .from("profiles")
+      .select("id, username, avatar_url")
+      .in("id", followerIds);
+
+    if (usersError) {
+      return res.status(500).json({ message: usersError.message || "Failed to load followers" });
+    }
+
+    const safeUsers = users ?? [];
+    const { data: followingRows } = safeUsers.length
+      ? await db
+          .from("user_follows")
+          .select("following_id")
+          .eq("follower_id", viewerId)
+          .in("following_id", safeUsers.map((entry) => entry.id))
+      : { data: [] };
+
+    const followingSet = new Set((followingRows ?? []).map((entry) => entry.following_id));
+
+    return res.json({
+      users: safeUsers.map((entry) => ({
+        ...entry,
+        isFollowing: followingSet.has(entry.id)
+      })),
+      total: count ?? 0,
+      hasMore: offset + (rows?.length || 0) < (count ?? 0),
+      nextOffset: offset + (rows?.length || 0)
+    });
+  } catch (err) {
+    console.error("listFollowers error", err);
+    return res.status(500).json({ message: "Failed to load followers" });
+  }
+};
+
+const listFollowing = async (req, res) => {
+  try {
+    const viewerId = req.user?.id;
+    const profileId = req.params?.id;
+    const db = supabaseAdmin || supabase;
+
+    if (!viewerId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const limit = Math.min(Math.max(Number(req.query?.limit) || 20, 1), 50);
+    const offset = Math.max(Number(req.query?.offset) || 0, 0);
+
+    const { data: rows, error, count } = await db
+      .from("user_follows")
+      .select("following_id", { count: "exact" })
+      .eq("follower_id", profileId)
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      return res.status(500).json({ message: error.message || "Failed to load following" });
+    }
+
+    const followingIds = (rows ?? []).map((entry) => entry.following_id);
+    if (!followingIds.length) {
+      return res.json({
+        users: [],
+        total: count ?? 0,
+        hasMore: false,
+        nextOffset: offset
+      });
+    }
+
+    const { data: users, error: usersError } = await db
+      .from("profiles")
+      .select("id, username, avatar_url")
+      .in("id", followingIds);
+
+    if (usersError) {
+      return res.status(500).json({ message: usersError.message || "Failed to load following" });
+    }
+
+    const safeUsers = users ?? [];
+    const { data: viewerFollowingRows } = safeUsers.length
+      ? await db
+          .from("user_follows")
+          .select("following_id")
+          .eq("follower_id", viewerId)
+          .in("following_id", safeUsers.map((entry) => entry.id))
+      : { data: [] };
+
+    const viewerFollowingSet = new Set(
+      (viewerFollowingRows ?? []).map((entry) => entry.following_id)
+    );
+
+    return res.json({
+      users: safeUsers.map((entry) => ({
+        ...entry,
+        isFollowing: viewerFollowingSet.has(entry.id)
+      })),
+      total: count ?? 0,
+      hasMore: offset + (rows?.length || 0) < (count ?? 0),
+      nextOffset: offset + (rows?.length || 0)
+    });
+  } catch (err) {
+    console.error("listFollowing error", err);
+    return res.status(500).json({ message: "Failed to load following" });
+  }
+};
+
 module.exports = {
   getMe,
   updateMe,
-  uploadMyAvatar
+  uploadMyAvatar,
+  getPublicProfile,
+  followUser,
+  unfollowUser,
+  listFollowers,
+  listFollowing
 };

@@ -20,6 +20,12 @@ type ProductRecord = {
   images?: string[];
 };
 
+type SellerProfile = {
+  id: string;
+  username?: string | null;
+  avatar_url?: string | null;
+};
+
 export default function ProductScreen() {
   const { theme } = useAppTheme();
   const router = useRouter();
@@ -36,6 +42,7 @@ export default function ProductScreen() {
   const [loading, setLoading] = useState(true);
   const [item, setItem] = useState<ProductRecord | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [sellerProfile, setSellerProfile] = useState<SellerProfile | null>(null);
 
   useEffect(() => {
     const loadItem = async () => {
@@ -54,6 +61,28 @@ export default function ProductScreen() {
     };
     loadItem();
   }, [params.id]);
+
+  useEffect(() => {
+    const loadSeller = async () => {
+      if (!item?.seller_id || !token) {
+        setSellerProfile(null);
+        return;
+      }
+
+      try {
+        const response = await api.get(`/users/${item.seller_id}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        setSellerProfile((response.data?.profile ?? null) as SellerProfile | null);
+      } catch {
+        setSellerProfile(null);
+      }
+    };
+
+    loadSeller();
+  }, [item?.seller_id, token]);
 
   useEffect(() => {
     const loadFavoriteStatus = async () => {
@@ -88,6 +117,8 @@ export default function ProductScreen() {
   const brand = item?.brand?.trim() || 'Unspecified';
   const size = item?.size?.trim() || 'Not listed';
   const condition = item?.condition?.trim() || 'Not listed';
+  const sellerName = sellerProfile?.username?.trim() || 'Seller';
+  const sellerAvatar = sellerProfile?.avatar_url?.trim() || '';
 
   const handleAddToCart = () => {
     Alert.alert('Added to cart', 'Item added to your cart.', [
@@ -102,58 +133,59 @@ export default function ProductScreen() {
     ]);
   };
 
-  const handleMessageSeller = () => {
+  const openConversation = async (openOfferComposer = false) => {
     if (!token) {
       Alert.alert('Sign in required', 'Please sign in to message sellers.');
       return;
     }
 
-    const createOrOpenConversation = async () => {
-      if (!params.id || !item?.seller_id) {
-        Alert.alert('Not available', 'This listing is missing seller details right now.');
+    if (!params.id || !item?.seller_id) {
+      Alert.alert('Not available', 'This listing is missing seller details right now.');
+      return;
+    }
+
+    try {
+      const response = await api.post(
+        '/chat/conversations',
+        {
+          itemId: params.id,
+          sellerId: item.seller_id,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const conversationId = response.data?.conversation?.id as string | undefined;
+      if (!conversationId) {
+        Alert.alert('Error', 'Could not open chat conversation.');
         return;
       }
 
-      try {
-        const response = await api.post(
-          '/chat/conversations',
-          {
-            itemId: params.id,
-            sellerId: item.seller_id,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+      router.push({
+        pathname: '/chat/[id]',
+        params: {
+          id: conversationId,
+          itemId: params.id,
+          title,
+          openOffer: openOfferComposer ? '1' : '0',
+          initialOffer: item?.price ? String(item.price) : '',
+        },
+      });
+    } catch (error: any) {
+      const message = error?.response?.data?.message || 'Could not open conversation right now.';
+      Alert.alert('Error', message);
+    }
+  };
 
-        const conversationId = response.data?.conversation?.id as string | undefined;
-        if (!conversationId) {
-          Alert.alert('Error', 'Could not open chat conversation.');
-          return;
-        }
-
-        router.push({
-          pathname: '/chat/[id]',
-          params: {
-            id: conversationId,
-            itemId: params.id,
-            title,
-          },
-        });
-      } catch (error: any) {
-        const message = error?.response?.data?.message || 'Could not open conversation right now.';
-        Alert.alert('Error', message);
-      }
-    };
-
-    createOrOpenConversation();
+  const handleMessageSeller = () => {
+    openConversation(false);
   };
 
   const handleMakeOffer = () => {
-    router.push('/(tabs)/inbox');
-    Alert.alert('Start negotiation', 'Send your offer in Inbox and negotiate directly with the seller.');
+    openConversation(true);
   };
 
   const handleToggleFavorite = async () => {
@@ -267,6 +299,33 @@ export default function ProductScreen() {
             <Text className="text-[10px] font-bold uppercase tracking-[1.4px]" style={{ color: theme.textMuted }}>
               Seller
             </Text>
+            <Pressable
+              className="mt-3 flex-row items-center rounded-xl border px-3 py-3"
+              style={{ borderColor: theme.border, backgroundColor: theme.background }}
+              onPress={() => {
+                if (!item?.seller_id) return;
+                router.push({
+                  pathname: '/user/[id]',
+                  params: { id: item.seller_id },
+                });
+              }}>
+              {sellerAvatar ? (
+                <Image source={{ uri: sellerAvatar }} contentFit="cover" className="h-10 w-10 rounded-full" />
+              ) : (
+                <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: theme.surfaceMuted }}>
+                  <MaterialIcons name="person" size={18} color={theme.textMuted} />
+                </View>
+              )}
+              <View className="ml-2 flex-1">
+                <Text className="text-sm font-semibold" style={{ color: theme.text }}>
+                  {sellerName}
+                </Text>
+                <Text className="text-xs" style={{ color: theme.textMuted }}>
+                  View closet, followers and following
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={18} color={theme.textMuted} />
+            </Pressable>
             <Text className="mt-3 text-sm leading-6" style={{ color: theme.textMuted }}>
               Ask questions about fit, shipping, and authenticity. You can also send an offer and negotiate in chat.
             </Text>
