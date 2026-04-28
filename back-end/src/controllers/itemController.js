@@ -2,9 +2,81 @@ const { supabase } = require("../services/supabaseClient");
 const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
 const { env } = require("../config/env");
 
+const DEFAULT_OPTIONS = {
+  audiences: [
+    { id: 1, code: "women", label: "Women" },
+    { id: 2, code: "men", label: "Men" },
+    { id: 3, code: "kids", label: "Kids" },
+    { id: 4, code: "unisex", label: "Unisex" }
+  ],
+  categoriesByAudience: {
+    women: [
+      "tops", "t-shirts", "blouses", "sweaters", "hoodies", "jackets", "coats",
+      "dresses", "jumpsuits", "jeans", "pants", "skirts", "shorts", "activewear",
+      "lingerie", "sleepwear", "swimwear", "maternity", "shoes", "bags", "accessories"
+    ],
+    men: [
+      "t-shirts", "shirts", "polos", "sweaters", "hoodies", "jackets", "coats",
+      "jeans", "pants", "shorts", "suits", "activewear", "underwear", "sleepwear",
+      "swimwear", "shoes", "bags", "accessories"
+    ],
+    kids: ["tops", "bottoms", "sets", "outerwear", "sleepwear", "swimwear", "shoes", "accessories"],
+    unisex: ["t-shirts", "hoodies", "sweatshirts", "jackets", "pants", "activewear", "accessories"]
+  },
+  brands: [
+    "Nike", "Adidas", "Zara", "H&M", "Uniqlo", "Levi's", "Gucci", "Prada", "Louis Vuitton", "Chanel",
+    "Balenciaga", "Burberry", "Dior", "Versace", "Ralph Lauren", "Tommy Hilfiger", "Calvin Klein",
+    "Armani", "The North Face", "Patagonia", "Columbia", "Puma", "Reebok", "New Balance", "ASOS",
+    "Bershka", "Pull & Bear", "Mango", "Massimo Dutti", "Forever 21", "Urban Outfitters",
+    "Brandy Melville", "Shein", "Gap", "Old Navy", "American Eagle", "Abercrombie & Fitch", "Hollister",
+    "Lululemon", "Gymshark", "Under Armour", "Vans", "Converse", "Dr. Martens", "Timberland"
+  ],
+  sizesByGroup: {
+    general: ["XXS", "XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL"],
+    women_eu: ["32", "34", "36", "38", "40", "42", "44", "46", "48", "50", "52"],
+    men_eu: ["44", "46", "48", "50", "52", "54", "56", "58", "60"],
+    jeans: ["W26L30", "W28L32", "W30L32", "W32L34", "W34L34", "W36L36"],
+    shoes_eu: ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"],
+    kids_eu: ["50", "56", "62", "68", "74", "80", "86", "92", "98", "104", "110", "116", "122", "128", "134", "140", "146", "152"]
+  }
+};
+
+const buildFallbackOptions = () => {
+  let categoryId = 1;
+  const categories = Object.entries(DEFAULT_OPTIONS.categoriesByAudience).flatMap(([audienceCode, names]) =>
+    names.map((name) => ({
+      id: categoryId++,
+      name,
+      audienceCode
+    }))
+  );
+
+  const brands = DEFAULT_OPTIONS.brands.map((name, index) => ({
+    id: index + 1,
+    name
+  }));
+
+  let sizeId = 1;
+  const sizes = Object.entries(DEFAULT_OPTIONS.sizesByGroup).flatMap(([groupCode, values]) =>
+    values.map((value, index) => ({
+      id: sizeId++,
+      value,
+      groupCode,
+      sortOrder: index + 1
+    }))
+  );
+
+  return {
+    audiences: DEFAULT_OPTIONS.audiences,
+    categories,
+    brands,
+    sizes
+  };
+};
+
 const listItems = async (req, res) => {
   try {
-    const { q, category, size, brand, minPrice, maxPrice, sellerId } = req.query;
+    const { q, category, size, brand, audience, minPrice, maxPrice, sellerId } = req.query;
 
     let query = supabase.from("items").select(
       `
@@ -15,6 +87,7 @@ const listItems = async (req, res) => {
         condition,
         size,
         brand,
+        audience,
         category,
         is_new,
         images_json,
@@ -39,6 +112,10 @@ const listItems = async (req, res) => {
 
     if (brand) {
       query = query.eq("brand", brand);
+    }
+
+    if (audience) {
+      query = query.eq("audience", audience);
     }
 
     if (sellerId) {
@@ -76,6 +153,97 @@ const listItems = async (req, res) => {
   }
 };
 
+const getItemOptions = async (req, res) => {
+  try {
+    const [
+      { data: audiences, error: audiencesError },
+      { data: categories, error: categoriesError },
+      { data: brands, error: brandsError },
+      { data: sizeGroups, error: sizeGroupsError },
+      { data: sizes, error: sizesError }
+    ] = await Promise.all([
+      supabase.from("audiences").select("id, code, label").order("id", { ascending: true }),
+      supabase.from("categories").select("id, audience_id, name").order("name", { ascending: true }),
+      supabase.from("brands").select("id, name").order("name", { ascending: true }),
+      supabase.from("size_groups").select("id, code").order("id", { ascending: true }),
+      supabase.from("sizes").select("id, value, sort_order, size_group_id").order("sort_order", { ascending: true })
+    ]);
+
+    if (audiencesError || categoriesError || brandsError || sizeGroupsError || sizesError) {
+      console.error("getItemOptions supabase error", {
+        audiencesError,
+        categoriesError,
+        brandsError,
+        sizeGroupsError,
+        sizesError
+      });
+      return res.status(500).json({ message: "Failed to load item options" });
+    }
+
+    const audienceCodeById =
+      audiences?.reduce((acc, entry) => {
+        acc[entry.id] = entry.code;
+        return acc;
+      }, {}) ?? {};
+
+    const sizeGroupCodeById =
+      sizeGroups?.reduce((acc, entry) => {
+        acc[entry.id] = entry.code;
+        return acc;
+      }, {}) ?? {};
+
+    const normalizedAudiences =
+      audiences?.map((entry) => ({
+        id: entry.id,
+        code: entry.code,
+        label: entry.label
+      })) ?? [];
+
+    const normalizedCategories =
+      categories?.map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        audienceCode: audienceCodeById[entry.audience_id] ?? null
+      })) ?? [];
+
+    const normalizedBrands =
+      brands?.map((entry) => ({
+        id: entry.id,
+        name: entry.name
+      })) ?? [];
+
+    const normalizedSizes =
+      sizes?.map((entry) => ({
+        id: entry.id,
+        value: entry.value,
+        groupCode: sizeGroupCodeById[entry.size_group_id] ?? null,
+        sortOrder: entry.sort_order ?? 0
+      })) ?? [];
+
+    const hasNoSeededOptions =
+      normalizedAudiences.length === 0 &&
+      normalizedCategories.length === 0 &&
+      normalizedBrands.length === 0 &&
+      normalizedSizes.length === 0;
+
+    const options = hasNoSeededOptions
+      ? buildFallbackOptions()
+      : {
+          audiences: normalizedAudiences,
+          categories: normalizedCategories,
+          brands: normalizedBrands,
+          sizes: normalizedSizes
+        };
+
+    return res.json({
+      options
+    });
+  } catch (err) {
+    console.error("getItemOptions error", err);
+    return res.status(500).json({ message: "Failed to load item options" });
+  }
+};
+
 const getItemById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -91,6 +259,7 @@ const getItemById = async (req, res) => {
         condition,
         size,
         brand,
+        audience,
         category,
         is_new,
         images_json,
@@ -138,6 +307,7 @@ const createItem = async (req, res) => {
       condition,
       size,
       brand,
+      audience,
       category,
       isNew,
       images
@@ -172,8 +342,9 @@ const createItem = async (req, res) => {
         condition: condition || null,
         size: size || null,
         brand: brand || null,
+        audience: audience || null,
         category: category || null,
-        is_new: isNew ? 1 : 0,
+        is_new: Boolean(isNew),
         images_json: images && images.length ? JSON.stringify(images) : null,
         seller_id: userId
       })
@@ -186,6 +357,7 @@ const createItem = async (req, res) => {
         condition,
         size,
         brand,
+        audience,
         category,
         is_new,
         images_json,
@@ -254,6 +426,7 @@ const uploadItemImage = async (req, res) => {
 
 module.exports = {
   listItems,
+  getItemOptions,
   getItemById,
   createItem,
   uploadItemImage
