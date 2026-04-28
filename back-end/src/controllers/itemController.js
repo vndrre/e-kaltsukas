@@ -2,6 +2,27 @@ const { supabase } = require("../services/supabaseClient");
 const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
 const { env } = require("../config/env");
 
+const normalizeImages = (imagesJson) => {
+  if (!imagesJson) {
+    return [];
+  }
+
+  if (Array.isArray(imagesJson)) {
+    return imagesJson;
+  }
+
+  if (typeof imagesJson === "string") {
+    try {
+      const parsed = JSON.parse(imagesJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
 const DEFAULT_OPTIONS = {
   audiences: [
     { id: 1, code: "women", label: "Women" },
@@ -76,7 +97,7 @@ const buildFallbackOptions = () => {
 
 const listItems = async (req, res) => {
   try {
-    const { q, category, size, brand, audience, minPrice, maxPrice, sellerId } = req.query;
+    const { q, category, size, brand, minPrice, maxPrice, sellerId } = req.query;
 
     let query = supabase.from("items").select(
       `
@@ -87,7 +108,6 @@ const listItems = async (req, res) => {
         condition,
         size,
         brand,
-        audience,
         category,
         is_new,
         images_json,
@@ -112,10 +132,6 @@ const listItems = async (req, res) => {
 
     if (brand) {
       query = query.eq("brand", brand);
-    }
-
-    if (audience) {
-      query = query.eq("audience", audience);
     }
 
     if (sellerId) {
@@ -143,7 +159,7 @@ const listItems = async (req, res) => {
       data?.map((row) => ({
         ...row,
         price: row.price_cents / 100,
-        images: row.images_json ? JSON.parse(row.images_json) : []
+        images: normalizeImages(row.images_json)
       })) || [];
 
     return res.json({ items });
@@ -259,7 +275,6 @@ const getItemById = async (req, res) => {
         condition,
         size,
         brand,
-        audience,
         category,
         is_new,
         images_json,
@@ -282,7 +297,7 @@ const getItemById = async (req, res) => {
     const item = {
       ...data,
       price: data.price_cents / 100,
-      images: data.images_json ? JSON.parse(data.images_json) : []
+      images: normalizeImages(data.images_json)
     };
 
     return res.json({ item });
@@ -307,7 +322,6 @@ const createItem = async (req, res) => {
       condition,
       size,
       brand,
-      audience,
       category,
       isNew,
       images
@@ -342,7 +356,6 @@ const createItem = async (req, res) => {
         condition: condition || null,
         size: size || null,
         brand: brand || null,
-        audience: audience || null,
         category: category || null,
         is_new: Boolean(isNew),
         images_json: images && images.length ? JSON.stringify(images) : null,
@@ -357,7 +370,6 @@ const createItem = async (req, res) => {
         condition,
         size,
         brand,
-        audience,
         category,
         is_new,
         images_json,
@@ -375,7 +387,7 @@ const createItem = async (req, res) => {
     const item = {
       ...data,
       price: data.price_cents / 100,
-      images: data.images_json ? JSON.parse(data.images_json) : []
+      images: normalizeImages(data.images_json)
     };
 
     return res.status(201).json({ item });
@@ -424,10 +436,129 @@ const uploadItemImage = async (req, res) => {
   }
 };
 
+const listFavoriteItemIds = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { data, error } = await supabase
+      .from("favorites")
+      .select("item_id")
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("listFavoriteItemIds supabase error", error);
+      return res.status(500).json({ message: "Failed to load favorites" });
+    }
+
+    const favoriteItemIds = data?.map((entry) => entry.item_id) ?? [];
+    return res.json({ favoriteItemIds });
+  } catch (err) {
+    console.error("listFavoriteItemIds error", err);
+    return res.status(500).json({ message: "Failed to load favorites" });
+  }
+};
+
+const isItemFavorited = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id: itemId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { data, error } = await supabase
+      .from("favorites")
+      .select("item_id")
+      .eq("user_id", userId)
+      .eq("item_id", itemId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("isItemFavorited supabase error", error);
+      return res.status(500).json({ message: "Failed to load favorite status" });
+    }
+
+    return res.json({ isFavorited: Boolean(data) });
+  } catch (err) {
+    console.error("isItemFavorited error", err);
+    return res.status(500).json({ message: "Failed to load favorite status" });
+  }
+};
+
+const addFavoriteItem = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id: itemId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { error } = await supabase
+      .from("favorites")
+      .upsert(
+        {
+          user_id: userId,
+          item_id: itemId
+        },
+        {
+          onConflict: "user_id,item_id",
+          ignoreDuplicates: true
+        }
+      );
+
+    if (error) {
+      console.error("addFavoriteItem supabase error", error);
+      return res.status(500).json({ message: "Failed to add favorite" });
+    }
+
+    return res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("addFavoriteItem error", err);
+    return res.status(500).json({ message: "Failed to add favorite" });
+  }
+};
+
+const removeFavoriteItem = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id: itemId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { error } = await supabase
+      .from("favorites")
+      .delete()
+      .eq("user_id", userId)
+      .eq("item_id", itemId);
+
+    if (error) {
+      console.error("removeFavoriteItem supabase error", error);
+      return res.status(500).json({ message: "Failed to remove favorite" });
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("removeFavoriteItem error", err);
+    return res.status(500).json({ message: "Failed to remove favorite" });
+  }
+};
+
 module.exports = {
   listItems,
   getItemOptions,
   getItemById,
   createItem,
-  uploadItemImage
+  uploadItemImage,
+  listFavoriteItemIds,
+  isItemFavorited,
+  addFavoriteItem,
+  removeFavoriteItem
 };

@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Animated, Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { HomeHeader } from '@/components/home/home-header';
 import { ProductItem, RecommendedItem } from '@/components/home/types';
-import { newArrivals, recommendedItems } from '@/components/home/home-data';
 import { MenuDrawer } from '@/components/home/menu-drawer';
 import { NewArrivalsSection } from '@/components/home/new-arrivals-section';
 import { RecommendedSection } from '@/components/home/recommended-section';
 import { SearchBar } from '@/components/home/search-bar';
+import { useAuth } from '@/hooks/auth-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
 
@@ -26,10 +26,12 @@ type ApiItem = {
 export default function HomeScreen() {
   const { theme } = useAppTheme();
   const router = useRouter();
+  const { token } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
   const [isLoadingFeed, setIsLoadingFeed] = useState(true);
-  const [arrivalItems, setArrivalItems] = useState<ProductItem[]>(newArrivals);
-  const [recommendedDbItems, setRecommendedDbItems] = useState<RecommendedItem[]>(recommendedItems);
+  const [arrivalItems, setArrivalItems] = useState<ProductItem[]>([]);
+  const [recommendedDbItems, setRecommendedDbItems] = useState<RecommendedItem[]>([]);
+  const [favoriteItemIds, setFavoriteItemIds] = useState<Set<string>>(new Set());
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -38,17 +40,13 @@ export default function HomeScreen() {
         const response = await api.get('/items');
         const items = (response.data?.items ?? []) as ApiItem[];
 
-        if (!items.length) {
-          return;
-        }
-
         const mapImageAndPrice = (item: ApiItem) => {
           const rawImages = Array.isArray(item.images)
             ? item.images
             : Array.isArray(item.images_json)
               ? item.images_json
               : [];
-          const image = rawImages[0] || newArrivals[0]?.image || '';
+          const image = rawImages[0] || '';
           const numericPrice = typeof item.price === 'number'
             ? item.price
             : typeof item.price_cents === 'number'
@@ -85,9 +83,7 @@ export default function HomeScreen() {
         });
 
         setArrivalItems(mappedItems);
-        if (mappedRecommended.length) {
-          setRecommendedDbItems(mappedRecommended);
-        }
+        setRecommendedDbItems(mappedRecommended);
       } catch (error) {
         console.error('Failed to load new arrivals:', error);
       } finally {
@@ -97,6 +93,29 @@ export default function HomeScreen() {
 
     loadNewArrivals();
   }, []);
+
+  useEffect(() => {
+    const loadFavorites = async () => {
+      if (!token) {
+        setFavoriteItemIds(new Set());
+        return;
+      }
+
+      try {
+        const response = await api.get('/items/favorites', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const ids = (response.data?.favoriteItemIds ?? []) as string[];
+        setFavoriteItemIds(new Set(ids));
+      } catch (error) {
+        console.error('Failed to load favorites:', error);
+      }
+    };
+
+    loadFavorites();
+  }, [token]);
 
   const openMenu = () => {
     setMenuVisible(true);
@@ -128,6 +147,58 @@ export default function HomeScreen() {
     inputRange: [0, 1],
     outputRange: [0, 0.45],
   });
+
+  const openProduct = (item: ProductItem | RecommendedItem) => {
+    router.push({
+      pathname: '/product/[id]',
+      params: {
+        id: item.id,
+        title: item.name,
+        category: item.category ?? 'Featured',
+        price: item.price,
+        image: item.image,
+      },
+    });
+  };
+
+  const toggleFavorite = async (itemId: string, willFavorite: boolean) => {
+    if (!token) {
+      Alert.alert('Sign in required', 'Please sign in to save favorites.');
+      return;
+    }
+
+    const previous = new Set(favoriteItemIds);
+    const optimistic = new Set(favoriteItemIds);
+    if (willFavorite) {
+      optimistic.add(itemId);
+    } else {
+      optimistic.delete(itemId);
+    }
+    setFavoriteItemIds(optimistic);
+
+    try {
+      if (willFavorite) {
+        await api.post(
+          `/items/${itemId}/favorite`,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+      } else {
+        await api.delete(`/items/${itemId}/favorite`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+    } catch (error) {
+      setFavoriteItemIds(previous);
+      Alert.alert('Error', 'Could not update favorite right now.');
+    }
+  };
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
@@ -171,8 +242,35 @@ export default function HomeScreen() {
           </View>
         ) : (
           <>
-            <NewArrivalsSection items={arrivalItems} />
-            <RecommendedSection items={recommendedDbItems} />
+            {arrivalItems.length || recommendedDbItems.length ? (
+              <>
+                <NewArrivalsSection
+                  items={arrivalItems}
+                  onItemPress={openProduct}
+                  favoriteItemIds={favoriteItemIds}
+                  onToggleFavorite={toggleFavorite}
+                />
+                <RecommendedSection
+                  items={recommendedDbItems}
+                  onItemPress={openProduct}
+                  favoriteItemIds={favoriteItemIds}
+                  onToggleFavorite={toggleFavorite}
+                />
+              </>
+            ) : (
+              <View className="px-4 py-14">
+                <View
+                  className="items-center rounded-2xl border px-5 py-10"
+                  style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+                  <Text className="text-2xl italic" style={{ color: theme.text }}>
+                    No listings yet
+                  </Text>
+                  <Text className="mt-2 text-center text-sm" style={{ color: theme.textMuted }}>
+                    Be the first to add an item from the Sell tab and it will appear here.
+                  </Text>
+                </View>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
