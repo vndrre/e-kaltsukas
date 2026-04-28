@@ -9,6 +9,7 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 
 type ProductRecord = {
   id: string;
+  seller_id?: string | null;
   title: string;
   description?: string | null;
   brand?: string | null;
@@ -102,7 +103,52 @@ export default function ProductScreen() {
   };
 
   const handleMessageSeller = () => {
-    router.push('/(tabs)/inbox');
+    if (!token) {
+      Alert.alert('Sign in required', 'Please sign in to message sellers.');
+      return;
+    }
+
+    const createOrOpenConversation = async () => {
+      if (!params.id || !item?.seller_id) {
+        Alert.alert('Not available', 'This listing is missing seller details right now.');
+        return;
+      }
+
+      try {
+        const response = await api.post(
+          '/chat/conversations',
+          {
+            itemId: params.id,
+            sellerId: item.seller_id,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const conversationId = response.data?.conversation?.id as string | undefined;
+        if (!conversationId) {
+          Alert.alert('Error', 'Could not open chat conversation.');
+          return;
+        }
+
+        router.push({
+          pathname: '/chat/[id]',
+          params: {
+            id: conversationId,
+            itemId: params.id,
+            title,
+          },
+        });
+      } catch (error: any) {
+        const message = error?.response?.data?.message || 'Could not open conversation right now.';
+        Alert.alert('Error', message);
+      }
+    };
+
+    createOrOpenConversation();
   };
 
   const handleMakeOffer = () => {
