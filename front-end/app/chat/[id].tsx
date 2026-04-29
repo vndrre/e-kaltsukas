@@ -18,9 +18,12 @@ type ChatMessage = {
 
 type ConversationDetails = {
   id: string;
+  item_id?: string;
   item?: {
     id: string;
     title?: string | null;
+    image?: string | null;
+    images_json?: string[] | string | null;
   } | null;
   itemPrice?: number | null;
   counterpart?: {
@@ -47,6 +50,30 @@ type OfferPayload = {
 
 const OFFER_PREFIX = '__OFFER__';
 
+function parseImages(value: string[] | string | null | undefined): string[] {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function formatPrice(value: number | null | undefined): string {
+  if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
+    return 'Price unavailable';
+  }
+  return `EUR ${value.toFixed(2)}`;
+}
+
 function parseOffer(body: string): OfferPayload | null {
   if (!body?.startsWith(OFFER_PREFIX)) {
     return null;
@@ -67,6 +94,7 @@ export default function ChatThreadScreen() {
   const params = useLocalSearchParams<{ id?: string; title?: string; openOffer?: string; initialOffer?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversation, setConversation] = useState<ConversationDetails | null>(null);
+  const [itemFallback, setItemFallback] = useState<{ id: string; title: string | null; image: string | null } | null>(null);
   const [counterpartProfile, setCounterpartProfile] = useState<CounterpartProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [draft, setDraft] = useState('');
@@ -126,6 +154,39 @@ export default function ChatThreadScreen() {
 
     loadCounterpartProfile();
   }, [conversation?.counterpart?.id, token]);
+
+  useEffect(() => {
+    const loadFallbackItem = async () => {
+      if (!token || !conversation?.item_id) {
+        setItemFallback(null);
+        return;
+      }
+
+      if (conversation.item?.title || conversation.item?.image) {
+        setItemFallback(null);
+        return;
+      }
+
+      try {
+        const response = await api.get(`/items/${conversation.item_id}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const item = response.data?.item;
+        const firstImage = Array.isArray(item?.images) ? item.images[0] : null;
+        setItemFallback({
+          id: conversation.item_id,
+          title: item?.title ?? null,
+          image: firstImage ?? null,
+        });
+      } catch {
+        setItemFallback(null);
+      }
+    };
+
+    loadFallbackItem();
+  }, [conversation?.item?.image, conversation?.item?.title, conversation?.item_id, token]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -328,6 +389,12 @@ export default function ChatThreadScreen() {
     conversation?.counterpart?.username?.trim() || threadTitle;
   const counterpartAvatar = conversation?.counterpart?.avatar_url?.trim() || '';
   const canFollowCounterpart = Boolean(conversation?.counterpart?.id && conversation?.counterpart?.id !== user?.id);
+  const itemId = conversation?.item?.id || conversation?.item_id || itemFallback?.id || '';
+  const parsedConversationImages = parseImages(conversation?.item?.images_json);
+  const itemTitle = conversation?.item?.title?.trim() || itemFallback?.title?.trim() || 'Item listing';
+  const itemImage = conversation?.item?.image?.trim() || itemFallback?.image?.trim() || parsedConversationImages[0] || '';
+  const itemPriceLabel = formatPrice(conversation?.itemPrice);
+  const canOpenItem = Boolean(itemId);
 
   const toggleFollowCounterpart = async () => {
     if (!token || !conversation?.counterpart?.id || !canFollowCounterpart) {
@@ -371,7 +438,8 @@ export default function ChatThreadScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <View className="flex-row items-center border-b px-4 pb-3 pt-12" style={{ borderBottomColor: theme.border, backgroundColor: theme.background }}>
+      <View className="px-4 pb-3 pt-12" style={{ borderBottomColor: theme.border, backgroundColor: theme.background }}>
+        <View className="flex-row items-center">
         <Pressable className="h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: theme.surfaceMuted }} onPress={() => router.back()}>
           <MaterialIcons name="arrow-back" size={20} color={theme.text} />
         </Pressable>
@@ -395,6 +463,44 @@ export default function ChatThreadScreen() {
             <Text className="text-[10px] font-bold uppercase" style={{ color: counterpartProfile?.isFollowing ? theme.text : theme.textOnPrimary }}>
               {counterpartProfile?.isFollowing ? 'Following' : 'Follow'}
             </Text>
+          </Pressable>
+        ) : null}
+        </View>
+
+        {itemId ? (
+          <Pressable
+            className="mt-3 flex-row items-center rounded-2xl border p-3"
+            style={{ borderColor: theme.border, backgroundColor: theme.surface }}
+            disabled={!canOpenItem}
+            onPress={() =>
+              router.push({
+                pathname: '/product/[id]',
+                params: {
+                  id: itemId,
+                  title: itemTitle,
+                  price: hasReferencePrice ? `€${referencePrice.toFixed(2)}` : '',
+                  image: itemImage,
+                },
+              })
+            }>
+            <View className="h-12 w-12 overflow-hidden rounded-xl" style={{ backgroundColor: theme.surfaceMuted }}>
+              {itemImage ? (
+                <Image source={{ uri: itemImage }} contentFit="cover" className="h-full w-full" />
+              ) : (
+                <View className="h-full w-full items-center justify-center">
+                  <MaterialIcons name="image" size={16} color={theme.textMuted} />
+                </View>
+              )}
+            </View>
+            <View className="ml-3 flex-1">
+              <Text className="text-sm font-semibold" numberOfLines={1} style={{ color: theme.text }}>
+                {itemTitle}
+              </Text>
+              <Text className="mt-0.5 text-xs" numberOfLines={1} style={{ color: theme.textMuted }}>
+                {itemPriceLabel}
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={18} color={theme.textMuted} />
           </Pressable>
         ) : null}
       </View>

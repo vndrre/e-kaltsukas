@@ -23,8 +23,28 @@ type Conversation = {
     id: string;
     title?: string | null;
     image?: string | null;
+    images_json?: string[] | string | null;
   } | null;
 };
+
+const parseImages = (value: string[] | string | null | undefined): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export default function InboxScreen() {
   const { theme } = useAppTheme();
@@ -47,7 +67,69 @@ export default function InboxScreen() {
             Authorization: `Bearer ${token}`,
           },
         });
-        setConversations((response.data?.conversations ?? []) as Conversation[]);
+        const baseConversations = (response.data?.conversations ?? []) as Conversation[];
+
+        const missingItemIds = [
+          ...new Set(
+            baseConversations
+              .filter((entry) => !entry.item?.title && !entry.item?.image)
+              .map((entry) => entry.item_id)
+              .filter((id): id is string => Boolean(id) && UUID_REGEX.test(id))
+          ),
+        ];
+
+        if (!missingItemIds.length) {
+          setConversations(baseConversations);
+          return;
+        }
+
+        const itemResponses = await Promise.allSettled(
+          missingItemIds.map((itemId) =>
+            api.get(`/items/${itemId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            })
+          )
+        );
+
+        const itemsById = new Map<string, { title: string | null; image: string | null }>();
+        itemResponses.forEach((result, index) => {
+          if (result.status !== 'fulfilled') {
+            return;
+          }
+
+          const item = result.value.data?.item;
+          if (!item) {
+            return;
+          }
+
+          const itemId = missingItemIds[index];
+          const image = (Array.isArray(item.images) ? item.images[0] : null) ?? null;
+          itemsById.set(itemId, {
+            title: item.title ?? null,
+            image,
+          });
+        });
+
+        const mergedConversations = baseConversations.map((entry) => {
+          const fallbackItem = itemsById.get(entry.item_id);
+          if (!fallbackItem) {
+            return entry;
+          }
+
+          return {
+            ...entry,
+            item: {
+              id: entry.item?.id ?? entry.item_id,
+              title: entry.item?.title ?? fallbackItem.title,
+              image: entry.item?.image ?? fallbackItem.image,
+              images_json: entry.item?.images_json ?? null,
+            },
+          };
+        });
+
+        setConversations(mergedConversations);
       } catch (error) {
         console.error('Failed to load conversations', error);
         setConversations([]);
@@ -73,7 +155,7 @@ export default function InboxScreen() {
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
       <View className="border-b px-4 pb-4 pt-12" style={{ borderBottomColor: theme.border }}>
         <Text className="text-3xl italic" style={{ color: theme.text }}>
-        Inbox
+          Inbox
         </Text>
         <Text className="mt-1 text-sm" style={{ color: theme.textMuted }}>
           Your active buyer/seller conversations.
@@ -89,6 +171,9 @@ export default function InboxScreen() {
           {orderedConversations.map((conversation) => {
             const isBuyer = conversation.buyer_id === user?.id;
             const counterpartId = isBuyer ? conversation.seller_id : conversation.buyer_id;
+            const parsedImages = parseImages(conversation.item?.images_json);
+            const itemImage = conversation.item?.image || parsedImages[0] || null;
+            const itemTitle = conversation.item?.title?.trim() || 'Item listing';
 
             return (
               <Pressable
@@ -105,8 +190,8 @@ export default function InboxScreen() {
                   })
                 }>
                 <View className="h-16 w-16 overflow-hidden rounded-xl" style={{ backgroundColor: theme.surfaceMuted }}>
-                  {conversation.item?.image ? (
-                    <Image source={{ uri: conversation.item.image }} contentFit="cover" className="h-full w-full" />
+                  {itemImage ? (
+                    <Image source={{ uri: itemImage }} contentFit="cover" className="h-full w-full" />
                   ) : (
                     <View className="h-full w-full items-center justify-center">
                       <MaterialIcons name="image" size={18} color={theme.textMuted} />
@@ -117,7 +202,7 @@ export default function InboxScreen() {
                 <View className="ml-3 flex-1 justify-center">
                   <View className="flex-row items-center justify-between">
                     <Text className="text-sm font-semibold" numberOfLines={1} style={{ color: theme.text }}>
-                      {conversation.item?.title || `Item: ${conversation.item_id.slice(0, 8)}`}
+                      {itemTitle}
                     </Text>
                     <MaterialIcons name="chevron-right" size={18} color={theme.textMuted} />
                   </View>

@@ -21,12 +21,12 @@ export const lightTheme: AppTheme = {
 };
 
 export const darkTheme: AppTheme = {
-  background: '#221d10',
-  surface: '#2a2416',
-  surfaceMuted: 'rgba(236, 182, 19, 0.08)',
+  background: '#0f0e0a',
+  surface: '#242016',
+  surfaceMuted: 'rgba(236, 182, 19, 0.06)',
   text: '#f1f5f9',
   textMuted: '#94a3b8',
   textOnPrimary: '#221d10',
   primary: '#ecb613',
-  border: 'rgba(236, 182, 19, 0.15)',
+  border: 'rgba(236, 182, 19, 0.11)',
 };
