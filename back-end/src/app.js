@@ -8,6 +8,7 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const itemRoutes = require("./routes/itemRoutes");
 const chatRoutes = require("./routes/chatRoutes");
+const cartRoutes = require("./routes/cartRoutes");
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/items", itemRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/cart", cartRoutes);
 
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {

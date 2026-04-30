@@ -288,7 +288,7 @@ export default function PublicUserProfileScreen() {
                         id: listing.id,
                         title: listing.title,
                         category: listing.category ?? 'Listing',
-                        price: typeof listing.price === 'number' ? `$${listing.price.toFixed(2)}` : '$0.00',
+                        price: typeof listing.price === 'number' ? `€${listing.price.toFixed(2)}` : '€0.00',
                         image: listing.image ?? '',
                       },
                     })

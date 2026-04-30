@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 
 import { HomeHeader } from '@/components/home/home-header';
@@ -9,6 +10,7 @@ import { NewArrivalsSection } from '@/components/home/new-arrivals-section';
 import { RecommendedSection } from '@/components/home/recommended-section';
 import { SearchBar } from '@/components/home/search-bar';
 import { useAuth } from '@/hooks/auth-provider';
+import { useCart } from '@/hooks/cart-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
 
@@ -27,6 +29,7 @@ export default function HomeScreen() {
   const { theme } = useAppTheme();
   const router = useRouter();
   const { token } = useAuth();
+  const { cartCount, refreshCartCount } = useCart();
   const [menuVisible, setMenuVisible] = useState(false);
   const [isLoadingFeed, setIsLoadingFeed] = useState(true);
   const [arrivalItems, setArrivalItems] = useState<ProductItem[]>([]);
@@ -66,7 +69,7 @@ export default function HomeScreen() {
           return {
             id: item.id,
             name: item.title || 'Untitled item',
-            price: `$${numericPrice.toFixed(2)}`,
+            price: `€${numericPrice.toFixed(2)}`,
             image,
           };
         });
@@ -77,7 +80,7 @@ export default function HomeScreen() {
             id: item.id,
             category: item.category?.trim() || 'Featured',
             name: item.title || 'Untitled item',
-            price: `$${numericPrice.toFixed(2)}`,
+            price: `€${numericPrice.toFixed(2)}`,
             image,
           };
         });
@@ -116,6 +119,12 @@ export default function HomeScreen() {
 
     loadFavorites();
   }, [token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshCartCount();
+    }, [refreshCartCount])
+  );
 
   const openMenu = () => {
     setMenuVisible(true);
@@ -202,7 +211,7 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
-      <HomeHeader onMenuPress={openMenu} onCartPress={() => router.push('/cart')} cartCount={3} />
+      <HomeHeader onMenuPress={openMenu} onCartPress={() => router.push('/cart')} cartCount={cartCount} />
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
         {isLoadingFeed ? (

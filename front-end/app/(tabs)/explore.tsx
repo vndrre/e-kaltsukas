@@ -382,7 +382,7 @@ export default function ExploreScreen() {
                           id: item.id,
                           title: item.title,
                           category: item.category ?? 'Lux Market',
-                          price: typeof item.price === 'number' ? `$${item.price.toFixed(2)}` : '$0.00',
+                          price: typeof item.price === 'number' ? `€${item.price.toFixed(2)}` : '€0.00',
                           image: item.images?.[0],
                           description: item.description ?? '',
                         },
@@ -405,7 +405,7 @@ export default function ExploreScreen() {
                         {item.title}
                       </Text>
                       <Text className="text-sm font-bold" style={{ color: theme.text }}>
-                        {typeof item.price === 'number' ? `$${item.price.toFixed(2)}` : '$0.00'}
+                        {typeof item.price === 'number' ? `€${item.price.toFixed(2)}` : '€0.00'}
                       </Text>
                     </View>
                   </Pressable>

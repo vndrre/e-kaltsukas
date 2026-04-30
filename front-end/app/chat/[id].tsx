@@ -18,6 +18,8 @@ type ChatMessage = {
 
 type ConversationDetails = {
   id: string;
+  buyer_id?: string;
+  seller_id?: string;
   item_id?: string;
   item?: {
     id: string;
@@ -71,7 +73,7 @@ function formatPrice(value: number | null | undefined): string {
   if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
     return 'Price unavailable';
   }
-  return `EUR ${value.toFixed(2)}`;
+  return `€${value.toFixed(2)}`;
 }
 
 function parseOffer(body: string): OfferPayload | null {
@@ -99,6 +101,7 @@ export default function ChatThreadScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [actingOfferMessageId, setActingOfferMessageId] = useState<string | null>(null);
   const [offerInput, setOfferInput] = useState('');
   const [offerMode, setOfferMode] = useState<'new' | 'counter' | 'update' | null>(null);
   const [activeOfferMessageId, setActiveOfferMessageId] = useState<string | null>(null);
@@ -366,11 +369,12 @@ export default function ChatThreadScreen() {
   };
 
   const actOnOffer = async (messageId: string, action: 'accept' | 'decline') => {
-    if (!conversationId || !token) {
+    if (!conversationId || !token || actingOfferMessageId === messageId) {
       return;
     }
 
     try {
+      setActingOfferMessageId(messageId);
       const response = await api.patch(
         `/chat/conversations/${conversationId}/offers/${messageId}`,
         { action },
@@ -382,6 +386,8 @@ export default function ChatThreadScreen() {
       }
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.message || 'Could not update offer.');
+    } finally {
+      setActingOfferMessageId((prev) => (prev === messageId ? null : prev));
     }
   };
 
@@ -395,6 +401,7 @@ export default function ChatThreadScreen() {
   const itemImage = conversation?.item?.image?.trim() || itemFallback?.image?.trim() || parsedConversationImages[0] || '';
   const itemPriceLabel = formatPrice(conversation?.itemPrice);
   const canOpenItem = Boolean(itemId);
+  const isBuyer = conversation?.buyer_id === user?.id;
 
   const toggleFollowCounterpart = async () => {
     if (!token || !conversation?.counterpart?.id || !canFollowCounterpart) {
@@ -468,40 +475,52 @@ export default function ChatThreadScreen() {
         </View>
 
         {itemId ? (
-          <Pressable
-            className="mt-3 flex-row items-center rounded-2xl border p-3"
-            style={{ borderColor: theme.border, backgroundColor: theme.surface }}
-            disabled={!canOpenItem}
-            onPress={() =>
-              router.push({
-                pathname: '/product/[id]',
-                params: {
-                  id: itemId,
-                  title: itemTitle,
-                  price: hasReferencePrice ? `€${referencePrice.toFixed(2)}` : '',
-                  image: itemImage,
-                },
-              })
-            }>
-            <View className="h-12 w-12 overflow-hidden rounded-xl" style={{ backgroundColor: theme.surfaceMuted }}>
-              {itemImage ? (
-                <Image source={{ uri: itemImage }} contentFit="cover" className="h-full w-full" />
-              ) : (
-                <View className="h-full w-full items-center justify-center">
-                  <MaterialIcons name="image" size={16} color={theme.textMuted} />
-                </View>
-              )}
-            </View>
-            <View className="ml-3 flex-1">
-              <Text className="text-sm font-semibold" numberOfLines={1} style={{ color: theme.text }}>
-                {itemTitle}
-              </Text>
-              <Text className="mt-0.5 text-xs" numberOfLines={1} style={{ color: theme.textMuted }}>
-                {itemPriceLabel}
-              </Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={18} color={theme.textMuted} />
-          </Pressable>
+          <>
+            <Pressable
+              className="mt-3 flex-row items-center rounded-2xl border p-3"
+              style={{ borderColor: theme.border, backgroundColor: theme.surface }}
+              disabled={!canOpenItem}
+              onPress={() =>
+                router.push({
+                  pathname: '/product/[id]',
+                  params: {
+                    id: itemId,
+                    title: itemTitle,
+                    price: hasReferencePrice ? `€${referencePrice.toFixed(2)}` : '',
+                    image: itemImage,
+                  },
+                })
+              }>
+              <View className="h-12 w-12 overflow-hidden rounded-xl" style={{ backgroundColor: theme.surfaceMuted }}>
+                {itemImage ? (
+                  <Image source={{ uri: itemImage }} contentFit="cover" className="h-full w-full" />
+                ) : (
+                  <View className="h-full w-full items-center justify-center">
+                    <MaterialIcons name="image" size={16} color={theme.textMuted} />
+                  </View>
+                )}
+              </View>
+              <View className="ml-3 flex-1">
+                <Text className="text-sm font-semibold" numberOfLines={1} style={{ color: theme.text }}>
+                  {itemTitle}
+                </Text>
+                <Text className="mt-0.5 text-xs" numberOfLines={1} style={{ color: theme.textMuted }}>
+                  {itemPriceLabel}
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={18} color={theme.textMuted} />
+            </Pressable>
+            {isBuyer ? (
+              <Pressable
+                className="mt-2 self-start rounded-full px-3 py-1.5"
+                style={{ backgroundColor: theme.surfaceMuted }}
+                onPress={() => router.push('/cart')}>
+                <Text className="text-[11px] font-bold uppercase tracking-[0.9px]" style={{ color: theme.text }}>
+                  Go to cart
+                </Text>
+              </Pressable>
+            ) : null}
+          </>
         ) : null}
       </View>
 
@@ -540,6 +559,7 @@ export default function ChatThreadScreen() {
                           <Pressable
                             className="rounded-full px-3 py-1"
                             style={{ backgroundColor: theme.primary }}
+                            disabled={actingOfferMessageId === message.id}
                             onPress={() => actOnOffer(message.id, 'accept')}>
                             <Text className="text-[10px] font-bold uppercase" style={{ color: theme.textOnPrimary }}>
                               Accept
@@ -548,6 +568,7 @@ export default function ChatThreadScreen() {
                           <Pressable
                             className="rounded-full px-3 py-1"
                             style={{ backgroundColor: theme.surfaceMuted }}
+                            disabled={actingOfferMessageId === message.id}
                             onPress={() => actOnOffer(message.id, 'decline')}>
                             <Text className="text-[10px] font-bold uppercase" style={{ color: theme.text }}>
                               Decline

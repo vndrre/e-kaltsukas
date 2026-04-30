@@ -21,7 +21,7 @@ function parseOfferBody(body) {
 async function ensureConversationParticipant(db, conversationId, userId) {
   const { data: conversation, error } = await db
     .from("conversations")
-    .select("id, buyer_id, seller_id")
+    .select("id, item_id, buyer_id, seller_id")
     .eq("id", conversationId)
     .maybeSingle();
 
@@ -488,11 +488,14 @@ const updateOffer = async (req, res) => {
       return res.status(400).json({ message: "Message is not an offer" });
     }
 
-    if (offer.status !== "pending") {
-      return res.status(400).json({ message: "Only pending offers can be updated" });
-    }
-
     if (action === "accept" || action === "decline") {
+      if (offer.status !== "pending") {
+        if (offer.status === "accepted" || offer.status === "declined") {
+          return res.json({ message: currentMessage });
+        }
+        return res.status(400).json({ message: "Only pending offers can be updated" });
+      }
+
       if (currentMessage.sender_id === userId) {
         return res.status(403).json({ message: "Sender cannot respond to own offer" });
       }
@@ -516,10 +519,44 @@ const updateOffer = async (req, res) => {
         return res.status(500).json({ message: updateError.message || "Failed to respond to offer" });
       }
 
+      if (action === "accept") {
+        const acceptedAmountCents = Math.round(Number(offer.amount) * 100);
+        if (!Number.isNaN(acceptedAmountCents) && acceptedAmountCents > 0) {
+          const { error: cartUpsertError } = await db
+            .from("cart_items")
+            .upsert(
+              {
+                user_id: access.conversation.buyer_id,
+                item_id: access.conversation.item_id,
+                offer_price_cents: acceptedAmountCents
+              },
+              {
+                onConflict: "user_id,item_id"
+              }
+            );
+
+          if (cartUpsertError) {
+            console.error("updateOffer cart upsert error", cartUpsertError);
+            if (cartUpsertError.code === "42703") {
+              return res.status(500).json({
+                message:
+                  "cart_items.offer_price_cents column is missing. Run cart schema migration for offer pricing."
+              });
+            }
+            return res
+              .status(500)
+              .json({ message: cartUpsertError.message || "Failed to sync accepted offer with cart" });
+          }
+        }
+      }
+
       return res.json({ message: updated });
     }
 
     if (action === "update") {
+      if (offer.status !== "pending") {
+        return res.status(400).json({ message: "Only pending offers can be updated" });
+      }
       if (currentMessage.sender_id !== userId) {
         return res.status(403).json({ message: "Only the sender can update this offer" });
       }
@@ -550,6 +587,9 @@ const updateOffer = async (req, res) => {
     }
 
     if (action === "counter") {
+      if (offer.status !== "pending") {
+        return res.status(400).json({ message: "Only pending offers can be updated" });
+      }
       if (currentMessage.sender_id === userId) {
         return res.status(403).json({ message: "Sender cannot counter own offer" });
       }

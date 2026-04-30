@@ -243,7 +243,7 @@ export default function ProfileScreen() {
     meta: [item.category, item.size, item.condition]
       .filter((value): value is string => Boolean(value && value.trim()))
       .map((value) => value.trim()),
-    priceLabel: `$${item.price.toFixed(2)}`,
+    priceLabel: `€${item.price.toFixed(2)}`,
     image: item.images?.[0] ?? profileImage,
   }));
   const listingsCount = listings.length;

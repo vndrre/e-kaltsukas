@@ -322,6 +322,6 @@ const styles = StyleSheet.create({
   sellLabel: {
     fontSize: 11,
     fontWeight: '700',
-    marginTop: 1.8,
+    marginTop: 3.5,
   },
 });

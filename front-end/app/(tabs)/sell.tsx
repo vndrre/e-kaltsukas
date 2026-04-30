@@ -775,11 +775,15 @@ export default function SellScreen() {
       />
 
       <View
-        className="absolute bottom-5 left-0 right-0 px-5"
-        pointerEvents="box-none">
+        className="absolute left-0 right-0 px-5"
+        pointerEvents="box-none"
+        style={{ bottom: 125, elevation: 30, zIndex: 30 }}>
           <Pressable
             className="items-center rounded-full py-4"
-            style={{ backgroundColor: theme.primary, opacity: isSubmitting ? 0.7 : 1 }}
+            style={{
+              backgroundColor: theme.primary,
+              opacity: isSubmitting ? 0.7 : 1,
+            }}
             onPress={handlePublishListing}
             disabled={isSubmitting}>
             {isSubmitting ? <ActivityIndicator color={theme.textOnPrimary} /> : null}
