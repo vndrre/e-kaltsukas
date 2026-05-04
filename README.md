@@ -98,6 +98,8 @@ Features include:
 
 Integrated payment system using **Stripe**.
 
+**Integration blueprint (hold funds until delivery, Connect, shipping notes, security):** see [`docs/MARKETPLACE_PAYMENTS_AND_SHIPPING.md`](docs/MARKETPLACE_PAYMENTS_AND_SHIPPING.md).
+
 Features include:
 
 - In-app checkout process
