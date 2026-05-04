@@ -1,10 +1,11 @@
 import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { PlatformPressable } from '@react-navigation/elements';
-import { Redirect, Tabs } from 'expo-router';
+import { Redirect, Tabs, usePathname } from 'expo-router';
 import React from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ActivityIndicator, Animated, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useAuth } from '@/hooks/auth-provider';
+import { rememberNonSellTabFromPathname } from '@/hooks/last-non-sell-tab';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
 type AnimatedTabBarButtonProps = BottomTabBarButtonProps & {
@@ -173,7 +174,13 @@ function SellTabBarButton(props: BottomTabBarButtonProps) {
 export default function TabLayout() {
   const { theme } = useAppTheme();
   const { isHydrated, isAuthenticated } = useAuth();
+  const pathname = usePathname();
+  const hideTabBarForSellFlow = pathname.includes('/sell');
   const { width } = useWindowDimensions();
+
+  React.useEffect(() => {
+    rememberNonSellTabFromPathname(pathname);
+  }, [pathname]);
   const sideMargin = width < 380 ? 14 : 22;
   const tabBarWidth = Math.min(Math.max(width - sideMargin * 2, 280), 460);
   const tabBarLeft = (width - tabBarWidth) / 2;
@@ -205,6 +212,7 @@ export default function TabLayout() {
             left: tabBarLeft,
             shadowColor: theme.text,
             width: tabBarWidth,
+            display: hideTabBarForSellFlow ? 'none' : 'flex',
           },
         ],
         tabBarLabelStyle: styles.tabLabel,

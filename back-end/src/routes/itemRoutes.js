@@ -5,6 +5,9 @@ const {
   getItemById,
   createItem,
   uploadItemImage,
+  getListingDraft,
+  upsertListingDraft,
+  deleteListingDraft,
   listFavoriteItemIds,
   isItemFavorited,
   addFavoriteItem,
@@ -17,6 +20,9 @@ const router = express.Router();
 
 router.get("/", listItems);
 router.get("/options", getItemOptions);
+router.get("/draft", authMiddleware, getListingDraft);
+router.put("/draft", authMiddleware, upsertListingDraft);
+router.delete("/draft", authMiddleware, deleteListingDraft);
 router.get("/favorites", authMiddleware, listFavoriteItemIds);
 router.get("/:id/favorite", authMiddleware, isItemFavorited);
 router.post("/:id/favorite", authMiddleware, addFavoriteItem);

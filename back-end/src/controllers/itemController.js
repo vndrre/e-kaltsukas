@@ -1,4 +1,4 @@
-const { supabase } = require("../services/supabaseClient");
+const { supabase, supabaseAdmin } = require("../services/supabaseClient");
 const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
 const { env } = require("../config/env");
 
@@ -524,6 +524,104 @@ const addFavoriteItem = async (req, res) => {
   }
 };
 
+const db = () => supabaseAdmin || supabase;
+
+const getListingDraft = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { data, error } = await db()
+      .from("listing_drafts")
+      .select("payload, updated_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("getListingDraft supabase error", error);
+      return res.status(500).json({ message: "Failed to load draft" });
+    }
+
+    if (!data) {
+      return res.json({ draft: null });
+    }
+
+    return res.json({
+      draft: {
+        payload: data.payload ?? {},
+        updatedAt: data.updated_at
+      }
+    });
+  } catch (err) {
+    console.error("getListingDraft error", err);
+    return res.status(500).json({ message: "Failed to load draft" });
+  }
+};
+
+const upsertListingDraft = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { payload } = req.body;
+    if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
+      return res.status(400).json({ message: "payload must be a JSON object" });
+    }
+
+    const row = {
+      user_id: userId,
+      payload,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await db()
+      .from("listing_drafts")
+      .upsert(row, { onConflict: "user_id" })
+      .select("payload, updated_at")
+      .single();
+
+    if (error) {
+      console.error("upsertListingDraft supabase error", error);
+      return res.status(500).json({ message: "Failed to save draft" });
+    }
+
+    return res.json({
+      draft: {
+        payload: data.payload ?? {},
+        updatedAt: data.updated_at
+      }
+    });
+  } catch (err) {
+    console.error("upsertListingDraft error", err);
+    return res.status(500).json({ message: "Failed to save draft" });
+  }
+};
+
+const deleteListingDraft = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { error } = await db().from("listing_drafts").delete().eq("user_id", userId);
+
+    if (error) {
+      console.error("deleteListingDraft supabase error", error);
+      return res.status(500).json({ message: "Failed to delete draft" });
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("deleteListingDraft error", err);
+    return res.status(500).json({ message: "Failed to delete draft" });
+  }
+};
+
 const removeFavoriteItem = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -557,6 +655,9 @@ module.exports = {
   getItemById,
   createItem,
   uploadItemImage,
+  getListingDraft,
+  upsertListingDraft,
+  deleteListingDraft,
   listFavoriteItemIds,
   isItemFavorited,
   addFavoriteItem,
