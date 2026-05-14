@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/auth-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
@@ -55,6 +56,7 @@ type FollowUser = {
 export default function ProfileScreen() {
   const { theme } = useAppTheme();
   const { user, token, logout } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -362,6 +364,25 @@ export default function ProfileScreen() {
                 </Pressable>
               ))}
             </View>
+          </View>
+
+          <View className="mx-4 mt-4 flex-row gap-2">
+            <Pressable
+              className="flex-1 items-center rounded-2xl border py-3"
+              style={{ borderColor: theme.border, backgroundColor: theme.surface }}
+              onPress={() => router.push({ pathname: '/orders', params: { role: 'buying' } })}>
+              <Text className="text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
+                Purchases
+              </Text>
+            </Pressable>
+            <Pressable
+              className="flex-1 items-center rounded-2xl border py-3"
+              style={{ borderColor: theme.border, backgroundColor: theme.surface }}
+              onPress={() => router.push({ pathname: '/orders', params: { role: 'selling' } })}>
+              <Text className="text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
+                Sales
+              </Text>
+            </Pressable>
           </View>
 
           <View className="mt-6 px-4">

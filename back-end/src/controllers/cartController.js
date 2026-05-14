@@ -1,4 +1,6 @@
 const { supabase, supabaseAdmin } = require("../services/supabaseClient");
+const { itemHasBlockingOrder } = require("../services/orderAvailability");
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const db = supabaseAdmin ?? supabase;
 const OFFER_PREFIX = "__OFFER__";
@@ -51,13 +53,17 @@ const mapCartRow = (row, acceptedOfferPriceByItemId = new Map()) => {
   }
 
   const acceptedOfferPriceCents = acceptedOfferPriceByItemId.get(item.id);
-  const unitPriceCents = row.offer_price_cents ?? acceptedOfferPriceCents ?? item.price_cents ?? 0;
+  const listPriceCents = item.price_cents ?? 0;
+  const unitPriceCents = row.offer_price_cents ?? acceptedOfferPriceCents ?? listPriceCents;
 
   return {
     id: row.id,
     itemId: item.id,
     unitPriceCents,
     unitPrice: unitPriceCents / 100,
+    listPriceCents,
+    listPrice: listPriceCents / 100,
+    isOfferPrice: unitPriceCents < listPriceCents || row.offer_price_cents != null,
     lineTotalCents: unitPriceCents,
     lineTotal: unitPriceCents / 100,
     item: {
@@ -229,6 +235,15 @@ const addToCart = async (req, res) => {
 
     if (item.seller_id === userId) {
       return res.status(400).json({ message: "You cannot add your own listing to cart" });
+    }
+
+    try {
+      if (await itemHasBlockingOrder(db, itemId)) {
+        return res.status(409).json({ message: "This listing is no longer available to purchase" });
+      }
+    } catch (blockingOrderError) {
+      console.error("addToCart blocking order lookup error", blockingOrderError);
+      return res.status(500).json({ message: "Failed to validate listing availability" });
     }
 
     const { data: existing, error: existingError } = await db

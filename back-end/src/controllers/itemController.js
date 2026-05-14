@@ -1,6 +1,9 @@
 const { supabase, supabaseAdmin } = require("../services/supabaseClient");
 const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
 const { env } = require("../config/env");
+const { itemHasBlockingOrder, getBlockingOrderItemIds } = require("../services/orderAvailability");
+
+const db = supabaseAdmin ?? supabase;
 
 const normalizeImages = (imagesJson) => {
   if (!imagesJson) {
@@ -155,12 +158,26 @@ const listItems = async (req, res) => {
       return res.status(500).json({ message: "Failed to list items" });
     }
 
-    const items =
-      data?.map((row) => ({
+    const rows = data ?? [];
+    let blockedItemIds = new Set();
+
+    try {
+      blockedItemIds = await getBlockingOrderItemIds(
+        db,
+        rows.map((row) => row.id)
+      );
+    } catch (blockingOrderError) {
+      console.error("listItems availability lookup error", blockingOrderError);
+      return res.status(500).json({ message: "Failed to filter unavailable listings" });
+    }
+
+    const items = rows
+      .filter((row) => !blockedItemIds.has(row.id))
+      .map((row) => ({
         ...row,
         price: row.price_cents / 100,
         images: normalizeImages(row.images_json)
-      })) || [];
+      }));
 
     return res.json({ items });
   } catch (err) {
@@ -294,10 +311,18 @@ const getItemById = async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
+    let isAvailableForPurchase = true;
+    try {
+      isAvailableForPurchase = !(await itemHasBlockingOrder(db, data.id));
+    } catch (availabilityError) {
+      console.error("getItemById availability lookup error", availabilityError);
+    }
+
     const item = {
       ...data,
       price: data.price_cents / 100,
-      images: normalizeImages(data.images_json)
+      images: normalizeImages(data.images_json),
+      isAvailableForPurchase
     };
 
     return res.json({ item });
@@ -524,8 +549,6 @@ const addFavoriteItem = async (req, res) => {
   }
 };
 
-const db = () => supabaseAdmin || supabase;
-
 const getListingDraft = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -533,7 +556,7 @@ const getListingDraft = async (req, res) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { data, error } = await db()
+    const { data, error } = await db
       .from("listing_drafts")
       .select("payload, updated_at")
       .eq("user_id", userId)
@@ -578,7 +601,7 @@ const upsertListingDraft = async (req, res) => {
       updated_at: new Date().toISOString()
     };
 
-    const { data, error } = await db()
+    const { data, error } = await db
       .from("listing_drafts")
       .upsert(row, { onConflict: "user_id" })
       .select("payload, updated_at")
@@ -608,7 +631,7 @@ const deleteListingDraft = async (req, res) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { error } = await db().from("listing_drafts").delete().eq("user_id", userId);
+    const { error } = await db.from("listing_drafts").delete().eq("user_id", userId);
 
     if (error) {
       console.error("deleteListingDraft supabase error", error);

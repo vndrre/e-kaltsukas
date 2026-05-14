@@ -8,11 +8,14 @@ import { useAuth } from '@/hooks/auth-provider';
 import { useCart } from '@/hooks/cart-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
+import { releaseFocusBeforeNavigation } from '@/lib/navigation-focus';
 
 type CartItem = {
   id: string;
   itemId: string;
   unitPrice: number;
+  listPrice?: number;
+  isOfferPrice?: boolean;
   lineTotal: number;
   item: {
     id: string;
@@ -160,8 +163,8 @@ export default function CartScreen() {
             <Text className="text-xl font-semibold" style={{ color: theme.text }}>
               Your cart is empty
             </Text>
-            <Text className="mt-2 text-sm leading-6" style={{ color: theme.textMuted }}>
-              Add items from product pages and they will show up here.
+            <Text className="mt-2 text-sm" style={{ color: theme.textMuted }}>
+              Browse listings to add items.
             </Text>
           </View>
         ) : (
@@ -188,6 +191,11 @@ export default function CartScreen() {
                     <Text className="mt-0.5 text-sm font-bold" style={{ color: theme.primary }}>
                       €{entry.lineTotal.toFixed(2)}
                     </Text>
+                    {entry.isOfferPrice ? (
+                      <Text className="mt-1 text-[10px] font-bold uppercase tracking-[0.8px]" style={{ color: theme.textMuted }}>
+                        Offer price
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
                 <View className="mt-3 flex-row items-center justify-between">
@@ -248,9 +256,15 @@ export default function CartScreen() {
         <Pressable
           className="rounded-full items-center justify-center py-4"
           style={{ backgroundColor: theme.primary, opacity: items.length ? 1 : 0.7 }}
-          disabled={!items.length}>
+          disabled={!items.length}
+          onPress={() => {
+            releaseFocusBeforeNavigation();
+            requestAnimationFrame(() => {
+              router.push('/checkout');
+            });
+          }}>
           <Text className="text-sm font-bold uppercase tracking-[1px]" style={{ color: theme.textOnPrimary }}>
-            Checkout (coming soon)
+            Checkout
           </Text>
         </Pressable>
       </View>

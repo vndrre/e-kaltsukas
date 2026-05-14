@@ -25,6 +25,8 @@ type Conversation = {
     image?: string | null;
     images_json?: string[] | string | null;
   } | null;
+  isLocked?: boolean;
+  lockReason?: string | null;
 };
 
 const parseImages = (value: string[] | string | null | undefined): string[] => {
@@ -209,6 +211,7 @@ export default function InboxScreen() {
                   <Text className="mt-1 text-xs" numberOfLines={1} style={{ color: theme.textMuted }}>
                     {isBuyer ? 'Seller' : 'Buyer'}:{' '}
                     {conversation.counterpart?.username || counterpartId.slice(0, 8)}
+                    {conversation.isLocked ? ' · Read only' : ''}
                   </Text>
                 </View>
               </Pressable>

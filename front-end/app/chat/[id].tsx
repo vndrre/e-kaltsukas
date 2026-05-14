@@ -1,9 +1,10 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAuth } from '@/hooks/auth-provider';
+import { useCart } from '@/hooks/cart-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
 import { getChatSocket } from '@/lib/chat-socket';
@@ -28,6 +29,8 @@ type ConversationDetails = {
     images_json?: string[] | string | null;
   } | null;
   itemPrice?: number | null;
+  isLocked?: boolean;
+  lockReason?: string | null;
   counterpart?: {
     id: string;
     username?: string | null;
@@ -76,6 +79,21 @@ function formatPrice(value: number | null | undefined): string {
   return `€${value.toFixed(2)}`;
 }
 
+function formatOfferStatus(status: OfferPayload['status']): string {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'accepted':
+      return 'Accepted';
+    case 'declined':
+      return 'Declined';
+    case 'countered':
+      return 'Countered';
+    default:
+      return status;
+  }
+}
+
 function parseOffer(body: string): OfferPayload | null {
   if (!body?.startsWith(OFFER_PREFIX)) {
     return null;
@@ -92,6 +110,7 @@ function parseOffer(body: string): OfferPayload | null {
 export default function ChatThreadScreen() {
   const { theme } = useAppTheme();
   const { token, user } = useAuth();
+  const { refreshCartCount } = useCart();
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string; title?: string; openOffer?: string; initialOffer?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -111,27 +130,31 @@ export default function ChatThreadScreen() {
 
   const conversationId = params.id;
   const threadTitle = params.title ?? 'Conversation';
+  const isConversationLocked = conversation?.isLocked === true;
 
-  useEffect(() => {
-    const loadConversation = async () => {
-      if (!conversationId || !token) {
-        return;
-      }
+  const loadConversation = useCallback(async () => {
+    if (!conversationId || !token) {
+      setConversation(null);
+      return;
+    }
 
-      try {
-        const response = await api.get(`/chat/conversations/${conversationId}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        setConversation((response.data?.conversation ?? null) as ConversationDetails | null);
-      } catch {
-        setConversation(null);
-      }
-    };
-
-    loadConversation();
+    try {
+      const response = await api.get(`/chat/conversations/${conversationId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      setConversation((response.data?.conversation ?? null) as ConversationDetails | null);
+    } catch {
+      setConversation(null);
+    }
   }, [conversationId, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadConversation();
+    }, [loadConversation])
+  );
 
   useEffect(() => {
     const loadCounterpartProfile = async () => {
@@ -250,7 +273,7 @@ export default function ChatThreadScreen() {
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!conversationId || !token || isSending) {
+    if (!conversationId || !token || isSending || isConversationLocked) {
       return;
     }
 
@@ -290,6 +313,11 @@ export default function ChatThreadScreen() {
   };
 
   const openOfferModal = (mode: 'new' | 'counter' | 'update', messageId?: string, amount?: number) => {
+    if (isConversationLocked) {
+      Alert.alert('Conversation locked', conversation?.lockReason || 'This conversation is read-only after payment.');
+      return;
+    }
+
     setOfferMode(mode);
     setActiveOfferMessageId(messageId ?? null);
     setOfferInput(typeof amount === 'number' && !Number.isNaN(amount) ? String(amount) : '');
@@ -308,19 +336,19 @@ export default function ChatThreadScreen() {
       return;
     }
 
-    if (params.openOffer !== '1') {
+    if (params.openOffer !== '1' || isConversationLocked) {
       return;
     }
 
     hasAutoOpenedOffer.current = true;
     const initialAmount = Number(params.initialOffer);
     openOfferModal('new', undefined, Number.isNaN(initialAmount) ? undefined : initialAmount);
-  }, [params.initialOffer, params.openOffer]);
+  }, [isConversationLocked, params.initialOffer, params.openOffer]);
 
   const groupedMessages = useMemo(() => messages, [messages]);
 
   const submitOffer = async () => {
-    if (!conversationId || !token) {
+    if (!conversationId || !token || isConversationLocked) {
       return;
     }
 
@@ -369,7 +397,7 @@ export default function ChatThreadScreen() {
   };
 
   const actOnOffer = async (messageId: string, action: 'accept' | 'decline') => {
-    if (!conversationId || !token || actingOfferMessageId === messageId) {
+    if (!conversationId || !token || actingOfferMessageId === messageId || isConversationLocked) {
       return;
     }
 
@@ -383,6 +411,14 @@ export default function ChatThreadScreen() {
       const updated = response.data?.message as ChatMessage | undefined;
       if (updated) {
         setMessages((prev) => prev.map((entry) => (entry.id === updated.id ? updated : entry)));
+      }
+
+      if (action === 'accept') {
+        await refreshCartCount();
+        const viewerIsBuyer = conversation?.buyer_id === user?.id;
+        if (viewerIsBuyer) {
+          router.push('/cart');
+        }
       }
     } catch (error: any) {
       Alert.alert('Error', error?.response?.data?.message || 'Could not update offer.');
@@ -552,9 +588,19 @@ export default function ChatThreadScreen() {
                         €{offer.amount.toFixed(2)}
                       </Text>
                       <Text className="mt-1 text-xs" style={{ color: isMine ? theme.textOnPrimary : theme.textMuted }}>
-                        Status: {offer.status}
+                        {formatOfferStatus(offer.status)}
                       </Text>
-                      {offer.status === 'pending' && !isOfferSender ? (
+                      {offer.status === 'accepted' && isBuyer ? (
+                        <Pressable
+                          className="mt-2 self-start rounded-full px-3 py-1"
+                          style={{ backgroundColor: theme.surfaceMuted }}
+                          onPress={() => router.push('/cart')}>
+                          <Text className="text-[10px] font-bold uppercase" style={{ color: theme.text }}>
+                            Go to cart
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      {offer.status === 'pending' && !isOfferSender && !isConversationLocked ? (
                         <View className="mt-2 flex-row gap-2">
                           <Pressable
                             className="rounded-full px-3 py-1"
@@ -586,7 +632,7 @@ export default function ChatThreadScreen() {
                           </Pressable>
                         </View>
                       ) : null}
-                      {offer.status === 'pending' && isOfferSender ? (
+                      {offer.status === 'pending' && isOfferSender && !isConversationLocked ? (
                         <Pressable
                           className="mt-2 self-start rounded-full px-3 py-1"
                           style={{ backgroundColor: theme.surfaceMuted }}
@@ -618,37 +664,47 @@ export default function ChatThreadScreen() {
       )}
 
       <View className="border-t px-3 pb-6 pt-3" style={{ borderTopColor: theme.border, backgroundColor: theme.background }}>
-        <View className="mb-2 flex-row gap-2">
-          <Pressable
-            className="rounded-full px-3 py-1.5"
-            style={{ backgroundColor: theme.surfaceMuted }}
-            onPress={() => {
-              openOfferModal('new');
-            }}>
-            <Text className="text-[14px] font-bold uppercase" style={{ color: theme.text }}>
-              Make offer
+        {isConversationLocked ? (
+          <View className="rounded-2xl border px-4 py-3" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+            <Text className="text-sm leading-5" style={{ color: theme.textMuted }}>
+              {conversation?.lockReason || 'This conversation is read-only after payment.'}
             </Text>
-          </Pressable>
-        </View>
+          </View>
+        ) : (
+          <>
+            <View className="mb-2 flex-row gap-2">
+              <Pressable
+                className="rounded-full px-3 py-1.5"
+                style={{ backgroundColor: theme.surfaceMuted }}
+                onPress={() => {
+                  openOfferModal('new');
+                }}>
+                <Text className="text-[14px] font-bold uppercase" style={{ color: theme.text }}>
+                  Make offer
+                </Text>
+              </Pressable>
+            </View>
 
-        <View className="flex-row items-end rounded-2xl border px-3 py-2" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Type a message..."
-            placeholderTextColor={theme.textMuted}
-            className="max-h-28 flex-1 py-2"
-            multiline
-            style={{ color: theme.text }}
-          />
-          <Pressable
-            className="ml-2 h-10 w-10 items-center justify-center rounded-full"
-            style={{ backgroundColor: draft.trim() ? theme.primary : theme.surfaceMuted }}
-            onPress={sendMessage}
-            disabled={!draft.trim() || isSending}>
-            <MaterialIcons name="send" size={18} color={draft.trim() ? theme.textOnPrimary : theme.textMuted} />
-          </Pressable>
-        </View>
+            <View className="flex-row items-end rounded-2xl border px-3 py-2" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Type a message..."
+                placeholderTextColor={theme.textMuted}
+                className="max-h-28 flex-1 py-2"
+                multiline
+                style={{ color: theme.text }}
+              />
+              <Pressable
+                className="ml-2 h-10 w-10 items-center justify-center rounded-full"
+                style={{ backgroundColor: draft.trim() ? theme.primary : theme.surfaceMuted }}
+                onPress={sendMessage}
+                disabled={!draft.trim() || isSending}>
+                <MaterialIcons name="send" size={18} color={draft.trim() ? theme.textOnPrimary : theme.textMuted} />
+              </Pressable>
+            </View>
+          </>
+        )}
       </View>
 
       <Modal visible={isOfferModalVisible} transparent animationType="fade" onRequestClose={closeOfferModal}>

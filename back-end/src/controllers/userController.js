@@ -1,6 +1,7 @@
 const { supabase, supabaseAdmin } = require("../services/supabaseClient");
 const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
 const { env } = require("../config/env");
+const { getBlockingOrderItemIds } = require("../services/orderAvailability");
 
 const profileSelectFields =
   "id, username, bio, location, instagram, avatar_url, closet_name, closet_description, style_tags, created_at";
@@ -255,6 +256,20 @@ const getPublicProfile = async (req, res) => {
       return res.status(500).json({ message: listingsError.message || "Failed to load listings" });
     }
 
+    let blockedItemIds = new Set();
+
+    try {
+      blockedItemIds = await getBlockingOrderItemIds(
+        db,
+        (listings ?? []).map((entry) => entry.id)
+      );
+    } catch (blockingOrderError) {
+      console.error("getPublicProfile availability lookup error", blockingOrderError);
+      return res.status(500).json({ message: "Failed to filter unavailable listings" });
+    }
+
+    const availableListings = (listings ?? []).filter((entry) => !blockedItemIds.has(entry.id));
+
     const [
       { count: followersCount, error: followersCountError },
       { count: followingCount, error: followingCountError },
@@ -280,7 +295,7 @@ const getPublicProfile = async (req, res) => {
       });
     }
 
-    const normalizedListings = (listings ?? []).map((entry) => {
+    const normalizedListings = availableListings.map((entry) => {
       const rawImages = Array.isArray(entry.images_json)
         ? entry.images_json
         : typeof entry.images_json === "string"

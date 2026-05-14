@@ -14,7 +14,9 @@ const env = {
   AUTH_EMAIL_REDIRECT_URL:
     process.env.AUTH_EMAIL_REDIRECT_URL ||
     "http://localhost:8081/login?verified=1",
-  CLOUDINARY_URL: process.env.CLOUDINARY_URL || ""
+  CLOUDINARY_URL: process.env.CLOUDINARY_URL || "",
+  LOCALITY_API_KEY: process.env.LOCALITY_API_KEY || "",
+  LOCALITY_API_URL: process.env.LOCALITY_API_URL || "https://api.locality.ee"
 };
 
 module.exports = { env };

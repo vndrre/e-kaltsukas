@@ -1,5 +1,11 @@
 const { supabase, supabaseAdmin } = require("../services/supabaseClient");
+const {
+  CONVERSATION_LOCKED_MESSAGE,
+  getBlockingOrderItemIds,
+  getConversationLockState
+} = require("../services/orderAvailability");
 const OFFER_PREFIX = "__OFFER__";
+const db = supabaseAdmin || supabase;
 
 function buildOfferBody(payload) {
   return `${OFFER_PREFIX}${JSON.stringify(payload)}`;
@@ -40,9 +46,24 @@ async function ensureConversationParticipant(db, conversationId, userId) {
   return { error: null, conversation };
 }
 
+async function assertConversationWritable(db, conversation) {
+  if (!conversation?.item_id) {
+    return null;
+  }
+
+  const lockState = await getConversationLockState(db, conversation.item_id);
+  if (lockState.isLocked) {
+    return {
+      status: 403,
+      message: lockState.lockReason || CONVERSATION_LOCKED_MESSAGE
+    };
+  }
+
+  return null;
+}
+
 const createOrGetConversation = async (req, res) => {
   try {
-    const db = supabaseAdmin || supabase;
     const buyerId = req.user?.id;
     const { itemId, sellerId } = req.body || {};
 
@@ -91,7 +112,13 @@ const createOrGetConversation = async (req, res) => {
     }
 
     if (existingConversation) {
-      return res.json({ conversation: existingConversation });
+      const lockState = await getConversationLockState(db, itemId);
+      return res.json({ conversation: { ...existingConversation, ...lockState } });
+    }
+
+    const lockState = await getConversationLockState(db, itemId);
+    if (lockState.isLocked) {
+      return res.status(403).json({ message: lockState.lockReason || CONVERSATION_LOCKED_MESSAGE });
     }
 
     const { data: createdConversation, error: createError } = await db
@@ -109,7 +136,7 @@ const createOrGetConversation = async (req, res) => {
       return res.status(500).json({ message: createError.message || "Failed to create conversation" });
     }
 
-    return res.status(201).json({ conversation: createdConversation });
+    return res.status(201).json({ conversation: { ...createdConversation, ...lockState } });
   } catch (err) {
     console.error("createOrGetConversation error", err);
     return res.status(500).json({ message: "Failed to create conversation" });
@@ -155,6 +182,13 @@ const listMyConversations = async (req, res) => {
 
     const itemById = new Map((items ?? []).map((entry) => [entry.id, entry]));
     const profileById = new Map((profiles ?? []).map((entry) => [entry.id, entry]));
+    let lockedItemIds = new Set();
+
+    try {
+      lockedItemIds = await getBlockingOrderItemIds(db, itemIds);
+    } catch (lockError) {
+      console.error("listMyConversations lock lookup error", lockError);
+    }
 
     const enriched = safeConversations.map((entry) => {
       const counterpartId = entry.buyer_id === userId ? entry.seller_id : entry.buyer_id;
@@ -175,6 +209,8 @@ const listMyConversations = async (req, res) => {
 
       return {
         ...entry,
+        isLocked: lockedItemIds.has(entry.item_id),
+        lockReason: lockedItemIds.has(entry.item_id) ? CONVERSATION_LOCKED_MESSAGE : null,
         counterpart: {
           id: counterpartId,
           username: counterpart?.username || null,
@@ -260,9 +296,15 @@ const getConversationById = async (req, res) => {
           })()
         : [];
 
+    const lockState = await getConversationLockState(db, conversation.item_id).catch((lockError) => {
+      console.error("getConversationById lock lookup error", lockError);
+      return { isLocked: false, lockReason: null };
+    });
+
     return res.json({
       conversation: {
         ...conversation,
+        ...lockState,
         counterpart: {
           id: counterpartId,
           username: counterpart?.username || null,
@@ -353,7 +395,7 @@ const sendConversationMessage = async (req, res) => {
 
     const { data: conversation, error: conversationError } = await db
       .from("conversations")
-      .select("id, buyer_id, seller_id")
+      .select("id, buyer_id, seller_id, item_id")
       .eq("id", conversationId)
       .maybeSingle();
 
@@ -367,6 +409,11 @@ const sendConversationMessage = async (req, res) => {
 
     if (conversation.buyer_id !== userId && conversation.seller_id !== userId) {
       return res.status(403).json({ message: "Forbidden conversation" });
+    }
+
+    const writeLock = await assertConversationWritable(db, conversation);
+    if (writeLock) {
+      return res.status(writeLock.status).json({ message: writeLock.message });
     }
 
     const { data: message, error: messageError } = await db
@@ -414,6 +461,11 @@ const createOffer = async (req, res) => {
     const access = await ensureConversationParticipant(db, conversationId, userId);
     if (access.error) {
       return res.status(access.status || 500).json({ message: access.error });
+    }
+
+    const writeLock = await assertConversationWritable(db, access.conversation);
+    if (writeLock) {
+      return res.status(writeLock.status).json({ message: writeLock.message });
     }
 
     const offerPayload = {
@@ -466,6 +518,11 @@ const updateOffer = async (req, res) => {
     const access = await ensureConversationParticipant(db, conversationId, userId);
     if (access.error) {
       return res.status(access.status || 500).json({ message: access.error });
+    }
+
+    const writeLock = await assertConversationWritable(db, access.conversation);
+    if (writeLock) {
+      return res.status(writeLock.status).json({ message: writeLock.message });
     }
 
     const { data: currentMessage, error: messageError } = await db

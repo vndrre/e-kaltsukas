@@ -19,6 +19,7 @@ type ProductRecord = {
   size?: string | null;
   price?: number;
   images?: string[];
+  isAvailableForPurchase?: boolean;
 };
 
 type SellerProfile = {
@@ -149,7 +150,8 @@ export default function ProductScreen() {
   const sellerName = sellerProfile?.username?.trim() || 'Seller';
   const sellerAvatar = sellerProfile?.avatar_url?.trim() || '';
   const isOwnListing = Boolean(item?.seller_id && user?.id && item.seller_id === user.id);
-  const canAddToCart = Boolean(item?.id && UUID_REGEX.test(item.id));
+  const isListingAvailable = item?.isAvailableForPurchase !== false;
+  const canAddToCart = Boolean(item?.id && UUID_REGEX.test(item.id) && isListingAvailable);
   const canPressAddToCart = canAddToCart && !isInCart;
 
   const handleAddToCart = async () => {
@@ -423,16 +425,22 @@ export default function ProductScreen() {
               </>
             ) : (
               <>
-                <Text className="mt-3 text-sm leading-6" style={{ color: theme.textMuted }}>
-                  Ask questions about fit, shipping, and authenticity. You can also send an offer and negotiate in chat.
-                </Text>
+                {!isListingAvailable ? (
+                  <Text className="mt-3 text-sm leading-6" style={{ color: theme.textMuted }}>
+                    This listing has already been sold.
+                  </Text>
+                ) : null}
                 <View className="mt-4 flex-row gap-2">
                   <Pressable className="flex-1 items-center rounded-xl border py-3" style={{ borderColor: theme.border }} onPress={handleMessageSeller}>
                     <Text className="text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
                       Message seller
                     </Text>
                   </Pressable>
-                  <Pressable className="flex-1 items-center rounded-xl py-3" style={{ backgroundColor: theme.surfaceMuted }} onPress={handleMakeOffer}>
+                  <Pressable
+                    className="flex-1 items-center rounded-xl py-3"
+                    style={{ backgroundColor: theme.surfaceMuted, opacity: isListingAvailable ? 1 : 0.55 }}
+                    onPress={handleMakeOffer}
+                    disabled={!isListingAvailable}>
                     <Text className="text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
                       Make offer
                     </Text>
@@ -454,7 +462,7 @@ export default function ProductScreen() {
           onPress={isOwnListing ? handleManageListing : handleAddToCart}
           disabled={!isOwnListing && !canPressAddToCart}>
           <Text className="text-sm font-bold uppercase tracking-[1.4px]" style={{ color: theme.textOnPrimary }}>
-            {isOwnListing ? 'Manage Listing' : !canAddToCart ? 'Unavailable' : isInCart ? 'Already in Cart' : 'Add to Cart'}
+            {isOwnListing ? 'Manage Listing' : !isListingAvailable ? 'Sold' : !canAddToCart ? 'Unavailable' : isInCart ? 'Already in Cart' : 'Add to Cart'}
           </Text>
         </Pressable>
       </View>
