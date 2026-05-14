@@ -1,9 +1,9 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/auth-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
@@ -55,13 +55,13 @@ type FollowUser = {
 
 export default function ProfileScreen() {
   const { theme } = useAppTheme();
-  const { user, token, logout } = useAuth();
+  const { user, token } = useAuth();
   const router = useRouter();
+  const { edit } = useLocalSearchParams<{ edit?: string }>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [settingsVisible, setSettingsVisible] = useState(false);
   const [profile, setProfile] = useState<DbProfile | null>(null);
   const [listings, setListings] = useState<ListingItem[]>([]);
   const [form, setForm] = useState({
@@ -74,6 +74,7 @@ export default function ProfileScreen() {
   const [followers, setFollowers] = useState<FollowUser[]>([]);
   const [following, setFollowing] = useState<FollowUser[]>([]);
   const [activeFollowList, setActiveFollowList] = useState<'followers' | 'following' | null>(null);
+  const hasOpenedEditFromMenu = useRef(false);
 
   const headers = useMemo(
     () => ({
@@ -157,6 +158,16 @@ export default function ProfileScreen() {
     });
     setEditing(true);
   };
+
+  useEffect(() => {
+    if (edit !== '1' || loading || !profile || hasOpenedEditFromMenu.current) {
+      return;
+    }
+
+    hasOpenedEditFromMenu.current = true;
+    openEditModal();
+    router.setParams({ edit: undefined });
+  }, [edit, loading, profile, router]);
 
   const closeEditModal = () => {
     if (saving || uploadingAvatar) {
@@ -258,6 +269,24 @@ export default function ProfileScreen() {
       maximumFractionDigits: 1,
     }).format(Math.max(0, value));
 
+  const openListing = (listingId: string) => {
+    const item = listings.find((entry) => entry.id === listingId);
+    if (!item) {
+      return;
+    }
+
+    router.push({
+      pathname: '/product/[id]',
+      params: {
+        id: item.id,
+        title: item.title,
+        category: item.category ?? item.brand ?? 'Listing',
+        price: `€${item.price.toFixed(2)}`,
+        image: item.images?.[0] ?? '',
+      },
+    });
+  };
+
   const toggleFollowFromList = async (entry: FollowUser) => {
     if (entry.id === user?.id) {
       return;
@@ -305,12 +334,12 @@ export default function ProfileScreen() {
               <Text className="text-2xl font-bold italic" style={{ color: theme.primary }}>
                 Profile
               </Text>
-              
               <Pressable
-                className="h-9 w-9 items-center justify-center rounded-full"
+                accessibilityLabel="Open favorites"
+                className="h-10 w-10 items-center justify-center rounded-full"
                 style={{ backgroundColor: theme.surfaceMuted }}
-                onPress={() => setSettingsVisible(true)}>
-                <MaterialIcons name="settings" size={20} color={theme.text} />
+                onPress={() => router.push({ pathname: '/favorites' })}>
+                <MaterialIcons name="favorite-border" size={20} color={theme.text} />
               </Pressable>
             </View>
           </View>
@@ -332,15 +361,10 @@ export default function ProfileScreen() {
                 </Text>
               </View>
 
-              <View className="mt-6 flex-row gap-3">
-                <Pressable className="flex-1 rounded-full border py-3" style={{ borderColor: theme.border }} onPress={openEditModal}>
+              <View className="mt-6 items-center">
+                <Pressable className="rounded-full border px-8 py-3" style={{ borderColor: theme.border }} onPress={openEditModal}>
                   <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
                     Edit Profile
-                  </Text>
-                </Pressable>
-                <Pressable className="flex-1 rounded-full py-3" style={{ backgroundColor: theme.primary }}>
-                  <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.textOnPrimary }}>
-                    Share Closet
                   </Text>
                 </Pressable>
               </View>
@@ -396,7 +420,7 @@ export default function ProfileScreen() {
             </View>
             <View className="flex-row flex-wrap justify-between">
               {renderedCloset.map((item) => (
-                <View key={item.id} className="mb-6 w-[48%]">
+                <Pressable key={item.id} className="mb-6 w-[48%]" onPress={() => openListing(item.id)}>
                   <View className="aspect-[3/4] overflow-hidden rounded-2xl" style={{ backgroundColor: theme.surface }}>
                     <Image source={{ uri: item.image }} contentFit="cover" className="h-full w-full" />
                   </View>
@@ -423,7 +447,7 @@ export default function ProfileScreen() {
                   <Text className="mt-0.5 text-base font-bold" style={{ color: theme.primary }}>
                     {item.priceLabel}
                   </Text>
-                </View>
+                </Pressable>
               ))}
             </View>
             {!renderedCloset.length ? (
@@ -501,37 +525,6 @@ export default function ProfileScreen() {
             <Pressable className="rounded-full py-3" style={{ backgroundColor: theme.primary }} onPress={saveProfile} disabled={saving}>
               <Text className="text-center text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.textOnPrimary }}>
                 {saving ? 'Saving...' : 'Save Changes'}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={settingsVisible} transparent animationType="fade" onRequestClose={() => setSettingsVisible(false)}>
-        <View className="flex-1 items-center justify-center px-6">
-          <Pressable className="absolute inset-0 bg-black/55" onPress={() => setSettingsVisible(false)} />
-          <View className="w-full max-w-[340px] rounded-3xl border p-4" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
-            <View className="mb-3 flex-row items-center justify-between">
-              <Text className="text-lg font-semibold" style={{ color: theme.text }}>
-                Settings
-              </Text>
-              <Pressable
-                className="h-8 w-8 items-center justify-center rounded-full"
-                onPress={() => setSettingsVisible(false)}
-                style={{ backgroundColor: theme.surfaceMuted }}>
-                <MaterialIcons name="close" size={18} color={theme.text} />
-              </Pressable>
-            </View>
-
-            <Pressable
-              className="rounded-xl px-4 py-3"
-              style={{ backgroundColor: theme.surfaceMuted }}
-              onPress={() => {
-                setSettingsVisible(false);
-                logout();
-              }}>
-              <Text className="text-sm font-semibold" style={{ color: theme.text }}>
-                Sign out
               </Text>
             </Pressable>
           </View>

@@ -1,8 +1,9 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
+import DemoPaymentForm from '@/components/checkout/demo-payment-form';
 import { useAuth } from '@/hooks/auth-provider';
 import { useAddressSearch, type AddressSuggestion } from '@/hooks/use-address-search';
 import { useCart } from '@/hooks/cart-provider';
@@ -10,12 +11,25 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
 import { releaseFocusBeforeNavigation } from '@/lib/navigation-focus';
 
+type CartItem = {
+  itemId: string;
+  lineTotal: number;
+  item: {
+    title: string;
+    brand?: string | null;
+  };
+};
+
 export default function CheckoutScreen() {
   const router = useRouter();
   const { theme } = useAppTheme();
   const { token } = useAuth();
   const { refreshCartCount } = useCart();
+  const [isLoadingCart, setIsLoadingCart] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [subtotal, setSubtotal] = useState(0);
   const [fullName, setFullName] = useState('');
   const [addressQuery, setAddressQuery] = useState('');
   const [line1, setLine1] = useState('');
@@ -23,6 +37,52 @@ export default function CheckoutScreen() {
   const [postalCode, setPostalCode] = useState('');
   const [country, setCountry] = useState('');
   const { results, isSearching, isAvailable } = useAddressSearch(addressQuery, token);
+
+  const shipping = 0;
+  const total = subtotal + shipping;
+  const totalLabel = `€${total.toFixed(2)}`;
+
+  const shippingAddress = useMemo(
+    () => ({
+      name: fullName.trim(),
+      line1: line1.trim(),
+      city: city.trim(),
+      postalCode: postalCode.trim() || undefined,
+      country: country.trim(),
+    }),
+    [city, country, fullName, line1, postalCode]
+  );
+
+  const loadCart = useCallback(async () => {
+    if (!token) {
+      setCartItems([]);
+      setSubtotal(0);
+      setIsLoadingCart(false);
+      return;
+    }
+
+    try {
+      setIsLoadingCart(true);
+      const response = await api.get('/cart', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const nextItems = (response.data?.items ?? []) as CartItem[];
+      setCartItems(nextItems);
+      setSubtotal(Number(response.data?.summary?.subtotal ?? 0));
+    } catch (error: any) {
+      Alert.alert('Checkout unavailable', error?.response?.data?.message || 'Could not load your cart.');
+      setCartItems([]);
+      setSubtotal(0);
+    } finally {
+      setIsLoadingCart(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadCart();
+  }, [loadCart]);
 
   const applySuggestion = (suggestion: AddressSuggestion) => {
     setLine1(suggestion.line1);
@@ -33,13 +93,25 @@ export default function CheckoutScreen() {
     releaseFocusBeforeNavigation();
   };
 
-  const placeOrder = async () => {
-    if (!token || isSubmitting) {
+  const validateAddress = () => {
+    if (!fullName.trim() || !line1.trim() || !city.trim() || !country.trim()) {
+      Alert.alert('Missing details', 'Enter your delivery address to continue.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const continueToPayment = () => {
+    if (!validateAddress()) {
       return;
     }
 
-    if (!fullName.trim() || !line1.trim() || !city.trim() || !country.trim()) {
-      Alert.alert('Missing details', 'Enter your delivery address to continue.');
+    setShowPayment(true);
+  };
+
+  const placeOrder = useCallback(async () => {
+    if (!token || isSubmitting || !validateAddress()) {
       return;
     }
 
@@ -47,15 +119,7 @@ export default function CheckoutScreen() {
       setIsSubmitting(true);
       const response = await api.post(
         '/orders/checkout',
-        {
-          shippingAddress: {
-            name: fullName.trim(),
-            line1: line1.trim(),
-            city: city.trim(),
-            postalCode: postalCode.trim() || undefined,
-            country: country.trim(),
-          },
-        },
+        { shippingAddress },
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -87,7 +151,11 @@ export default function CheckoutScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [isSubmitting, refreshCartCount, router, shippingAddress, token]);
+
+  const handlePaymentValidationError = useCallback((message: string) => {
+    Alert.alert('Payment details', message);
+  }, []);
 
   return (
     <View className="flex-1" style={{ backgroundColor: theme.background }}>
@@ -115,6 +183,57 @@ export default function CheckoutScreen() {
 
       <ScrollView className="flex-1 px-4 pt-5" contentContainerStyle={{ paddingBottom: 24 }}>
         <View className="rounded-3xl border p-5" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+          <Text className="text-[11px] font-bold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
+            Order summary
+          </Text>
+          {isLoadingCart ? (
+            <View className="items-center py-6">
+              <ActivityIndicator color={theme.primary} />
+            </View>
+          ) : cartItems.length === 0 ? (
+            <Text className="mt-4 text-sm" style={{ color: theme.textMuted }}>
+              Your cart is empty.
+            </Text>
+          ) : (
+            <View className="mt-4 gap-3">
+              {cartItems.map((entry) => (
+                <View key={entry.itemId} className="flex-row items-start justify-between gap-3">
+                  <View className="flex-1">
+                    <Text className="text-[10px] font-bold uppercase tracking-[1px]" style={{ color: theme.textMuted }}>
+                      {entry.item.brand ?? 'Item'}
+                    </Text>
+                    <Text className="mt-1 text-sm font-semibold" style={{ color: theme.text }} numberOfLines={2}>
+                      {entry.item.title}
+                    </Text>
+                  </View>
+                  <Text className="text-sm font-bold" style={{ color: theme.primary }}>
+                    €{entry.lineTotal.toFixed(2)}
+                  </Text>
+                </View>
+              ))}
+              <View className="mt-2 border-t pt-3" style={{ borderTopColor: theme.border }}>
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-sm" style={{ color: theme.textMuted }}>
+                    Shipping
+                  </Text>
+                  <Text className="text-sm font-semibold" style={{ color: theme.text }}>
+                    Included
+                  </Text>
+                </View>
+                <View className="mt-2 flex-row items-center justify-between">
+                  <Text className="text-base font-semibold" style={{ color: theme.text }}>
+                    Total
+                  </Text>
+                  <Text className="text-xl font-bold" style={{ color: theme.primary }}>
+                    {totalLabel}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+
+        <View className="mt-4 rounded-3xl border p-5" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
           <Text className="text-[11px] font-bold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
             Delivery
           </Text>
@@ -222,23 +341,38 @@ export default function CheckoutScreen() {
             style={{ borderColor: theme.border, color: theme.text, backgroundColor: theme.background }}
           />
         </View>
+
+        {showPayment ? (
+          <View className="mt-4 rounded-3xl border p-5" style={{ borderColor: theme.border, backgroundColor: theme.surface }}>
+            <Text className="text-[11px] font-bold uppercase tracking-[1.2px]" style={{ color: theme.textMuted }}>
+              Payment
+            </Text>
+            <View className="mt-4">
+              <DemoPaymentForm
+                totalLabel={totalLabel}
+                isSubmitting={isSubmitting}
+                onPay={placeOrder}
+                onValidationError={handlePaymentValidationError}
+                theme={theme}
+              />
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
 
-      <View className="px-4 pb-8 pt-3">
-        <Pressable
-          className="rounded-full items-center justify-center py-4"
-          style={{ backgroundColor: theme.primary, opacity: isSubmitting ? 0.7 : 1 }}
-          disabled={isSubmitting}
-          onPress={placeOrder}>
-          {isSubmitting ? (
-            <ActivityIndicator color={theme.textOnPrimary} />
-          ) : (
+      {!showPayment ? (
+        <View className="px-4 pb-8 pt-3">
+          <Pressable
+            className="rounded-full items-center justify-center py-4"
+            style={{ backgroundColor: theme.primary, opacity: isLoadingCart || cartItems.length === 0 ? 0.7 : 1 }}
+            disabled={isLoadingCart || cartItems.length === 0}
+            onPress={continueToPayment}>
             <Text className="text-sm font-bold uppercase tracking-[1px]" style={{ color: theme.textOnPrimary }}>
-              Place order
+              Continue to payment
             </Text>
-          )}
-        </Pressable>
-      </View>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }

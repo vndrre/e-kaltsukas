@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useAuth } from '@/hooks/auth-provider';
 import { useCart } from '@/hooks/cart-provider';
+import { useInboxUnread } from '@/hooks/inbox-unread-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
 import { getChatSocket } from '@/lib/chat-socket';
@@ -111,6 +112,7 @@ export default function ChatThreadScreen() {
   const { theme } = useAppTheme();
   const { token, user } = useAuth();
   const { refreshCartCount } = useCart();
+  const { refreshInboxUnread } = useInboxUnread();
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string; title?: string; openOffer?: string; initialOffer?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -228,6 +230,7 @@ export default function ChatThreadScreen() {
           },
         });
         setMessages((response.data?.messages ?? []) as ChatMessage[]);
+        await refreshInboxUnread();
       } catch (error: any) {
         const message = error?.response?.data?.message || 'Failed to load messages.';
         Alert.alert('Error', message);
@@ -237,7 +240,7 @@ export default function ChatThreadScreen() {
     };
 
     loadMessages();
-  }, [conversationId, token]);
+  }, [conversationId, refreshInboxUnread, token]);
 
   useEffect(() => {
     if (!conversationId || !token) {

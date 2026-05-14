@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 
 import { HomeHeader } from '@/components/home/home-header';
 import { ProductItem, RecommendedItem } from '@/components/home/types';
-import { MenuDrawer } from '@/components/home/menu-drawer';
 import { NewArrivalsSection } from '@/components/home/new-arrivals-section';
 import { RecommendedSection } from '@/components/home/recommended-section';
 import { SearchBar } from '@/components/home/search-bar';
 import { useAuth } from '@/hooks/auth-provider';
 import { useCart } from '@/hooks/cart-provider';
+import { useMenuDrawer } from '@/hooks/menu-drawer-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { api } from '@/lib/api';
 
@@ -30,12 +30,11 @@ export default function HomeScreen() {
   const router = useRouter();
   const { token } = useAuth();
   const { cartCount, refreshCartCount } = useCart();
-  const [menuVisible, setMenuVisible] = useState(false);
+  const { openMenu } = useMenuDrawer();
   const [isLoadingFeed, setIsLoadingFeed] = useState(true);
   const [arrivalItems, setArrivalItems] = useState<ProductItem[]>([]);
   const [recommendedDbItems, setRecommendedDbItems] = useState<RecommendedItem[]>([]);
   const [favoriteItemIds, setFavoriteItemIds] = useState<Set<string>>(new Set());
-  const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const loadNewArrivals = async () => {
@@ -125,37 +124,6 @@ export default function HomeScreen() {
       refreshCartCount();
     }, [refreshCartCount])
   );
-
-  const openMenu = () => {
-    setMenuVisible(true);
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: 260,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const closeMenu = () => {
-    Animated.timing(progress, {
-      toValue: 0,
-      duration: 220,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setMenuVisible(false);
-      }
-    });
-  };
-
-  const drawerTranslateX = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-300, 0],
-  });
-
-  const backdropOpacity = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 0.45],
-  });
 
   const openProduct = (item: ProductItem | RecommendedItem) => {
     router.push({
@@ -283,23 +251,6 @@ export default function HomeScreen() {
           </>
         )}
       </ScrollView>
-
-      {menuVisible ? (
-        <View className="absolute inset-0 z-40">
-          <Pressable className="absolute inset-0" onPress={closeMenu}>
-            <Animated.View className="h-full w-full bg-black" style={{ opacity: backdropOpacity }} />
-          </Pressable>
-
-          <Animated.View
-            className="absolute bottom-0 left-0 top-0"
-            style={{
-              height: '100%',
-              transform: [{ translateX: drawerTranslateX }],
-            }}>
-            <MenuDrawer onClose={closeMenu} />
-          </Animated.View>
-        </View>
-      ) : null}
     </View>
   );
 }

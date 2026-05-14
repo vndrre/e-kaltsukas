@@ -16,7 +16,11 @@ const env = {
     "http://localhost:8081/login?verified=1",
   CLOUDINARY_URL: process.env.CLOUDINARY_URL || "",
   LOCALITY_API_KEY: process.env.LOCALITY_API_KEY || "",
-  LOCALITY_API_URL: process.env.LOCALITY_API_URL || "https://api.locality.ee"
+  LOCALITY_API_URL: process.env.LOCALITY_API_URL || "https://api.locality.ee",
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "",
+  STRIPE_PUBLISHABLE_KEY:
+    process.env.STRIPE_PUBLISHABLE_KEY || process.env.STRIPE_PUBLIC_KEY || "",
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || ""
 };
 
 module.exports = { env };

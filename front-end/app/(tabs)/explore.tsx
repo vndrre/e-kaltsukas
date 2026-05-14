@@ -23,6 +23,13 @@ type BrandOption = {
   name: string;
 };
 
+type SizeOption = {
+  id: number;
+  value: string;
+  groupCode: string | null;
+  sortOrder: number;
+};
+
 type SearchItem = {
   id: string;
   title: string;
@@ -34,7 +41,64 @@ type SearchItem = {
   size?: string | null;
 };
 
-type PickerType = 'category' | 'brand';
+type PickerType = 'category' | 'brand' | 'size';
+
+type SubmittedFilters = {
+  categories: string[];
+  sizes: string[];
+  brand: string;
+};
+
+function getAudienceAllowedSizeGroups(audience: string) {
+  if (audience === 'women') {
+    return ['general', 'women_eu', 'jeans', 'shoes_eu'];
+  }
+
+  if (audience === 'men') {
+    return ['general', 'men_eu', 'jeans', 'shoes_eu'];
+  }
+
+  if (audience === 'kids') {
+    return ['kids_eu', 'general', 'shoes_eu'];
+  }
+
+  if (audience === 'unisex') {
+    return ['general', 'shoes_eu'];
+  }
+
+  return [];
+}
+
+function getSizeGroupsForCategory(audience: string, category: string, allowedGroups: string[]) {
+  const normalized = category.trim().toLowerCase();
+  const allow = (groups: string[]) => groups.filter((group) => allowedGroups.includes(group));
+
+  if (normalized === 'shoes') {
+    return allow(['shoes_eu']);
+  }
+
+  if (normalized === 'jeans') {
+    return allow(['jeans']);
+  }
+
+  if (audience === 'kids') {
+    return allow(['kids_eu', 'general']);
+  }
+
+  return allow(['general']);
+}
+
+function formatSelectionSummary(values: string[], emptyLabel: string) {
+  if (!values.length) {
+    return emptyLabel;
+  }
+
+  if (values.length === 1) {
+    return values[0];
+  }
+
+  return `${values.length} selected`;
+}
 
 export default function ExploreScreen() {
   const { theme } = useAppTheme();
@@ -45,16 +109,19 @@ export default function ExploreScreen() {
   const [keywords, setKeywords] = useState<string[]>([]);
   const [items, setItems] = useState<SearchItem[]>([]);
   const [audience, setAudience] = useState('');
-  const [category, setCategory] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [brand, setBrand] = useState('');
   const [audiences, setAudiences] = useState<AudienceOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [brands, setBrands] = useState<BrandOption[]>([]);
+  const [sizeOptions, setSizeOptions] = useState<SizeOption[]>([]);
   const [activePicker, setActivePicker] = useState<PickerType | null>(null);
   const [pickerSearch, setPickerSearch] = useState('');
   const [hasAppliedAttributes, setHasAppliedAttributes] = useState(false);
-  const [submittedFilters, setSubmittedFilters] = useState<{ category: string; brand: string }>({
-    category: '',
+  const [submittedFilters, setSubmittedFilters] = useState<SubmittedFilters>({
+    categories: [],
+    sizes: [],
     brand: '',
   });
 
@@ -67,10 +134,12 @@ export default function ExploreScreen() {
         const fetchedAudiences = (response.data?.options?.audiences ?? []) as AudienceOption[];
         const fetchedCategories = (response.data?.options?.categories ?? []) as CategoryOption[];
         const fetchedBrands = (response.data?.options?.brands ?? []) as BrandOption[];
+        const fetchedSizes = (response.data?.options?.sizes ?? []) as SizeOption[];
 
         setAudiences(fetchedAudiences);
         setCategories(fetchedCategories);
         setBrands(fetchedBrands);
+        setSizeOptions(fetchedSizes);
       } catch (error) {
         console.error('Failed to load explore options:', error);
       } finally {
@@ -86,16 +155,51 @@ export default function ExploreScreen() {
     [audience, categories]
   );
 
-  useEffect(() => {
-    if (category && !audienceCategories.includes(category)) {
-      setCategory('');
+  const activeSizeGroups = useMemo(() => {
+    if (!audience || !selectedCategories.length) {
+      return [];
     }
-  }, [audienceCategories, category]);
 
-  const isReadyToExplore = Boolean(audience && category);
+    const allowedGroups = getAudienceAllowedSizeGroups(audience);
+    const groups = new Set<string>();
+
+    selectedCategories.forEach((category) => {
+      getSizeGroupsForCategory(audience, category, allowedGroups).forEach((group) => groups.add(group));
+    });
+
+    return Array.from(groups);
+  }, [audience, selectedCategories]);
+
+  const availableSizes = useMemo(() => {
+    const seen = new Set<string>();
+    return sizeOptions
+      .filter((entry) => entry.groupCode && activeSizeGroups.includes(entry.groupCode))
+      .filter((entry) => {
+        if (seen.has(entry.value)) {
+          return false;
+        }
+        seen.add(entry.value);
+        return true;
+      })
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((entry) => entry.value);
+  }, [activeSizeGroups, sizeOptions]);
+
+  useEffect(() => {
+    setSelectedCategories((prev) => prev.filter((entry) => audienceCategories.includes(entry)));
+  }, [audienceCategories]);
+
+  useEffect(() => {
+    setSelectedSizes((prev) => prev.filter((entry) => availableSizes.includes(entry)));
+  }, [availableSizes]);
+
+  const isReadyToExplore = Boolean(audience && selectedCategories.length);
+
+  const isMultiSelectPicker = activePicker === 'category' || activePicker === 'size';
 
   const pickerTitle = useMemo(() => {
-    if (activePicker === 'category') return 'Select Category';
+    if (activePicker === 'category') return 'Select Categories';
+    if (activePicker === 'size') return 'Select Sizes';
     if (activePicker === 'brand') return 'Select Brand';
     return '';
   }, [activePicker]);
@@ -107,15 +211,31 @@ export default function ExploreScreen() {
       return audienceCategories.filter((entry) => entry.toLowerCase().includes(queryLower));
     }
 
+    if (activePicker === 'size') {
+      return availableSizes.filter((entry) => entry.toLowerCase().includes(queryLower));
+    }
+
     if (activePicker === 'brand') {
       return brands.map((entry) => entry.name).filter((entry) => entry.toLowerCase().includes(queryLower));
     }
 
     return [];
-  }, [activePicker, audienceCategories, brands, pickerSearch]);
+  }, [activePicker, audienceCategories, availableSizes, brands, pickerSearch]);
+
+  const selectedPickerValues = useMemo(() => {
+    if (activePicker === 'category') {
+      return selectedCategories;
+    }
+
+    if (activePicker === 'size') {
+      return selectedSizes;
+    }
+
+    return [];
+  }, [activePicker, selectedCategories, selectedSizes]);
 
   useEffect(() => {
-    if (!hasAppliedAttributes || !submittedFilters.category) {
+    if (!hasAppliedAttributes || !submittedFilters.categories.length) {
       setItems([]);
       return;
     }
@@ -126,7 +246,8 @@ export default function ExploreScreen() {
         const response = await api.get('/items', {
           params: {
             q: keywordQuery || undefined,
-            category: submittedFilters.category,
+            category: submittedFilters.categories.join(','),
+            size: submittedFilters.sizes.length ? submittedFilters.sizes.join(',') : undefined,
             brand: submittedFilters.brand || undefined,
           },
         });
@@ -151,15 +272,32 @@ export default function ExploreScreen() {
     setPickerSearch('');
   };
 
+  const markFiltersDirty = () => {
+    setHasAppliedAttributes(false);
+  };
+
   const handlePickOption = (value: string) => {
     if (activePicker === 'category') {
-      setCategory(value);
-      setBrand('');
-    } else if (activePicker === 'brand') {
-      setBrand(value);
+      setSelectedCategories((prev) =>
+        prev.includes(value) ? prev.filter((entry) => entry !== value) : [...prev, value]
+      );
+      markFiltersDirty();
+      return;
     }
-    setHasAppliedAttributes(false);
-    closePicker();
+
+    if (activePicker === 'size') {
+      setSelectedSizes((prev) =>
+        prev.includes(value) ? prev.filter((entry) => entry !== value) : [...prev, value]
+      );
+      markFiltersDirty();
+      return;
+    }
+
+    if (activePicker === 'brand') {
+      setBrand(value);
+      markFiltersDirty();
+      closePicker();
+    }
   };
 
   const handleApplyAttributes = () => {
@@ -169,7 +307,8 @@ export default function ExploreScreen() {
 
     setHasAppliedAttributes(true);
     setSubmittedFilters({
-      category,
+      categories: selectedCategories,
+      sizes: selectedSizes,
       brand,
     });
   };
@@ -218,7 +357,8 @@ export default function ExploreScreen() {
                   key={option.id}
                   onPress={() => {
                     setAudience(option.code);
-                    setCategory('');
+                    setSelectedCategories([]);
+                    setSelectedSizes([]);
                     setBrand('');
                     setKeywords([]);
                     setKeywordInput('');
@@ -255,11 +395,83 @@ export default function ExploreScreen() {
               openPicker('category');
             }}
             disabled={!audience}>
-            <Text style={{ color: audience ? (category ? theme.text : theme.textMuted) : theme.textMuted }}>
-              {audience ? category || 'Select category' : 'Select clothing for first'}
+            <Text style={{ color: audience ? (selectedCategories.length ? theme.text : theme.textMuted) : theme.textMuted }}>
+              {audience
+                ? formatSelectionSummary(selectedCategories, 'Select categories')
+                : 'Select clothing for first'}
             </Text>
             <MaterialIcons name="keyboard-arrow-down" size={20} color={theme.textMuted} />
           </Pressable>
+          {selectedCategories.length ? (
+            <View className="mt-3 flex-row flex-wrap">
+              {selectedCategories.map((entry) => (
+                <Pressable
+                  key={entry}
+                  className="mb-2 mr-2 flex-row items-center rounded-full px-3 py-1.5"
+                  style={{ backgroundColor: theme.surfaceMuted }}
+                  onPress={() => {
+                    setSelectedCategories((prev) => prev.filter((value) => value !== entry));
+                    markFiltersDirty();
+                  }}>
+                  <Text className="text-xs font-semibold" style={{ color: theme.text }}>
+                    {entry}
+                  </Text>
+                  <MaterialIcons name="close" size={14} color={theme.textMuted} style={{ marginLeft: 6 }} />
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          <Text className="mt-8 text-[10px] font-bold uppercase tracking-[1.4px]" style={{ color: theme.textMuted }}>
+            Size (optional)
+          </Text>
+          <Pressable
+            className="mt-2 flex-row items-center justify-between rounded-xl border px-3 py-3"
+            style={{
+              borderColor: theme.border,
+              backgroundColor: isReadyToExplore ? theme.background : theme.surfaceMuted,
+              opacity: isReadyToExplore ? 1 : 0.6,
+            }}
+            onPress={() => {
+              if (!isReadyToExplore) return;
+              openPicker('size');
+            }}
+            disabled={!isReadyToExplore}>
+            <Text style={{ color: isReadyToExplore ? (selectedSizes.length ? theme.text : theme.textMuted) : theme.textMuted }}>
+              {isReadyToExplore ? formatSelectionSummary(selectedSizes, 'Select sizes') : 'Complete required attributes first'}
+            </Text>
+            <MaterialIcons name="keyboard-arrow-down" size={20} color={theme.textMuted} />
+          </Pressable>
+          {selectedSizes.length ? (
+            <View className="mt-3 flex-row flex-wrap">
+              {selectedSizes.map((entry) => (
+                <Pressable
+                  key={entry}
+                  className="mb-2 mr-2 flex-row items-center rounded-full px-3 py-1.5"
+                  style={{ backgroundColor: theme.surfaceMuted }}
+                  onPress={() => {
+                    setSelectedSizes((prev) => prev.filter((value) => value !== entry));
+                    markFiltersDirty();
+                  }}>
+                  <Text className="text-xs font-semibold" style={{ color: theme.text }}>
+                    {entry}
+                  </Text>
+                  <MaterialIcons name="close" size={14} color={theme.textMuted} style={{ marginLeft: 6 }} />
+                </Pressable>
+              ))}
+              <Pressable
+                className="mb-2 rounded-full px-3 py-1.5"
+                style={{ backgroundColor: theme.background }}
+                onPress={() => {
+                  setSelectedSizes([]);
+                  markFiltersDirty();
+                }}>
+                <Text className="text-xs font-semibold" style={{ color: theme.textMuted }}>
+                  Clear sizes
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           <Text className="mt-8 text-[10px] font-bold uppercase tracking-[1.4px]" style={{ color: theme.textMuted }}>
             Brand (optional)
@@ -288,7 +500,7 @@ export default function ExploreScreen() {
               style={{ backgroundColor: theme.surfaceMuted }}
               onPress={() => {
                 setBrand('');
-                setHasAppliedAttributes(false);
+                markFiltersDirty();
               }}>
               <Text className="text-[11px] font-semibold" style={{ color: theme.textMuted }}>
                 Clear brand filter
@@ -420,7 +632,7 @@ export default function ExploreScreen() {
                     Nothing yet
                   </Text>
                   <Text className="mt-2 text-center text-sm" style={{ color: theme.textMuted }}>
-                    Try removing the brand filter or changing category to discover more items.
+                    Try removing brand or size filters, or choosing different categories.
                   </Text>
                 </View>
               </View>
@@ -433,7 +645,7 @@ export default function ExploreScreen() {
                 Personalize your Explore
               </Text>
               <Text className="mt-3 text-sm leading-6" style={{ color: theme.textMuted }}>
-                Pick clothing for and category above, then tap Apply attributes. We will only show products after that so your feed stays relevant.
+                Pick clothing for and at least one category above, then tap Apply attributes. Add optional size and brand filters to narrow the feed.
               </Text>
             </View>
           </View>
@@ -470,19 +682,41 @@ export default function ExploreScreen() {
                   Loading options...
                 </Text>
               ) : pickerOptions.length ? (
-                pickerOptions.map((option) => (
-                  <Pressable key={option} onPress={() => handlePickOption(option)} className="border-b px-3 py-3" style={{ borderBottomColor: theme.border }}>
-                    <Text className="text-sm" style={{ color: theme.text }}>
-                      {option}
-                    </Text>
-                  </Pressable>
-                ))
+                pickerOptions.map((option) => {
+                  const isSelected = isMultiSelectPicker ? selectedPickerValues.includes(option) : false;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => handlePickOption(option)}
+                      className="flex-row items-center justify-between border-b px-3 py-3"
+                      style={{ borderBottomColor: theme.border, backgroundColor: isSelected ? theme.surfaceMuted : 'transparent' }}>
+                      <Text className="text-sm" style={{ color: theme.text }}>
+                        {option}
+                      </Text>
+                      {isMultiSelectPicker ? (
+                        <MaterialIcons
+                          name={isSelected ? 'check-circle' : 'radio-button-unchecked'}
+                          size={18}
+                          color={isSelected ? theme.primary : theme.textMuted}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                })
               ) : (
                 <Text className="px-3 py-3 text-xs" style={{ color: theme.textMuted }}>
                   No options found.
                 </Text>
               )}
             </ScrollView>
+
+            {isMultiSelectPicker ? (
+              <Pressable className="mt-4 items-center rounded-xl py-3" style={{ backgroundColor: theme.primary }} onPress={closePicker}>
+                <Text className="text-[11px] font-bold uppercase tracking-[1.2px]" style={{ color: theme.textOnPrimary }}>
+                  Done
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </Modal>

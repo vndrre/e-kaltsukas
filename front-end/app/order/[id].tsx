@@ -170,6 +170,18 @@ export default function OrderDetailScreen() {
     });
   };
 
+  const goBackFromOrder = () => {
+    releaseFocusBeforeNavigation();
+    requestAnimationFrame(() => {
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+
+      router.replace('/(tabs)');
+    });
+  };
+
   const goOrders = () => {
     releaseFocusBeforeNavigation();
     requestAnimationFrame(() => {
@@ -200,7 +212,7 @@ export default function OrderDetailScreen() {
         className="px-4 pb-4 pt-12"
         style={{ backgroundColor: theme.background, borderBottomColor: theme.border, borderBottomWidth: 1 }}>
         <View className="flex-row items-center justify-between">
-          <Pressable className="h-9 w-9 items-center justify-center rounded-full" onPress={() => router.back()} style={{ backgroundColor: theme.surfaceMuted }}>
+          <Pressable className="h-9 w-9 items-center justify-center rounded-full" onPress={goBackFromOrder} style={{ backgroundColor: theme.surfaceMuted }}>
             <MaterialIcons name="arrow-back" size={20} color={theme.text} />
           </Pressable>
           <Text className="text-2xl font-bold italic" style={{ color: theme.primary }}>

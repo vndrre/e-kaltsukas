@@ -1,7 +1,9 @@
 const { supabase, supabaseAdmin } = require("../services/supabaseClient");
+const { creditOrderRelease, handleWalletError } = require("../services/walletService");
 const {
-  getBlockingOrderItemIds
-} = require("../services/orderAvailability");
+  fulfillDemoCheckoutFromCart,
+  normalizeShippingAddress
+} = require("../services/checkoutService");
 
 const db = supabaseAdmin ?? supabase;
 const SHIPPING_CARRIER = "DPD";
@@ -148,100 +150,30 @@ const attachProfiles = async (rows) => {
 const checkoutFromCart = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const shippingAddress = req.body?.shippingAddress ?? req.body?.shipping_address ?? null;
+    const shippingAddress = normalizeShippingAddress(
+      req.body?.shippingAddress ?? req.body?.shipping_address ?? null
+    );
 
     if (!userId) {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { data: cartRows, error: cartError } = await db
-      .from("cart_items")
-      .select(
-        `
-          id,
-          offer_price_cents,
-          item:items (
-            id,
-            seller_id,
-            price_cents
-          )
-        `
-      )
-      .eq("user_id", userId);
-
-    if (cartError) {
-      console.error("checkoutFromCart cart lookup error", cartError);
-      return res.status(500).json({ message: "Failed to load cart" });
+    if (!shippingAddress) {
+      return res.status(400).json({ message: "Enter your delivery address to continue" });
     }
 
-    const rows = (cartRows ?? []).filter((entry) => entry?.item?.id);
-    if (!rows.length) {
-      return res.status(400).json({ message: "Your cart is empty" });
+    const orderIds = await fulfillDemoCheckoutFromCart(db, userId, shippingAddress);
+    if (!orderIds.length) {
+      return res.status(500).json({ message: "Failed to place order" });
     }
 
-    const itemIds = rows.map((entry) => entry.item.id);
-    let blockedItemIds;
-    try {
-      blockedItemIds = await getBlockingOrderItemIds(db, itemIds);
-    } catch (activeOrdersError) {
-      console.error("checkoutFromCart active orders lookup error", activeOrdersError);
-      if (activeOrdersError.code === "42P01") {
-        return res.status(500).json({ message: "orders table is missing. Run orders schema SQL migration." });
-      }
-      return res.status(500).json({ message: "Failed to validate listings" });
-    }
-    const orderPayloads = [];
-
-    for (const entry of rows) {
-      const item = entry.item;
-      if (!item?.seller_id) {
-        return res.status(400).json({ message: "One or more cart items are missing seller details" });
-      }
-
-      if (item.seller_id === userId) {
-        return res.status(400).json({ message: "You cannot buy your own listing" });
-      }
-
-      if (blockedItemIds.has(item.id)) {
-        return res.status(409).json({ message: "One or more items already have an active order" });
-      }
-
-      const priceCents = entry.offer_price_cents ?? item.price_cents ?? 0;
-      if (!Number.isInteger(priceCents) || priceCents <= 0) {
-        return res.status(400).json({ message: "One or more items have an invalid price" });
-      }
-
-      orderPayloads.push({
-        item_id: item.id,
-        buyer_id: userId,
-        seller_id: item.seller_id,
-        price_cents: priceCents,
-        status: "paid",
-        payout_status: "held",
-        paid_at: new Date().toISOString(),
-        shipping_address: shippingAddress
-      });
+    const { data, error } = await db.from("orders").select(orderSelect).in("id", orderIds);
+    if (error) {
+      console.error("checkoutFromCart order lookup error", error);
+      return res.status(500).json({ message: "Failed to load orders" });
     }
 
-    const { data: createdOrders, error: insertError } = await db
-      .from("orders")
-      .insert(orderPayloads)
-      .select(orderSelect);
-
-    if (insertError) {
-      console.error("checkoutFromCart insert error", insertError);
-      if (insertError.code === "42P01") {
-        return res.status(500).json({ message: "orders table is missing. Run orders schema SQL migration." });
-      }
-      return res.status(500).json({ message: insertError.message || "Failed to place order" });
-    }
-
-    const { error: clearCartError } = await db.from("cart_items").delete().eq("user_id", userId);
-    if (clearCartError) {
-      console.error("checkoutFromCart clear cart error", clearCartError);
-    }
-
-    const orders = (await attachProfiles(createdOrders ?? [])).map(mapOrderRow);
+    const orders = (await attachProfiles(data ?? [])).map(mapOrderRow);
     return res.status(201).json({
       orders,
       summary: {
@@ -251,7 +183,28 @@ const checkoutFromCart = async (req, res) => {
     });
   } catch (err) {
     console.error("checkoutFromCart error", err);
-    return res.status(500).json({ message: "Failed to place order" });
+
+    if (err.code === "EMPTY_CART") {
+      return res.status(400).json({ message: err.message });
+    }
+
+    if (err.code === "OWN_LISTING") {
+      return res.status(400).json({ message: err.message });
+    }
+
+    if (err.code === "ITEM_UNAVAILABLE") {
+      return res.status(409).json({ message: err.message });
+    }
+
+    if (err.code === "INVALID_CART" || err.code === "INVALID_PRICE") {
+      return res.status(400).json({ message: err.message });
+    }
+
+    if (err.code === "42P01") {
+      return res.status(500).json({ message: "orders table is missing. Run orders schema SQL migration." });
+    }
+
+    return res.status(500).json({ message: err.message || "Failed to place order" });
   }
 };
 
@@ -417,7 +370,7 @@ const confirmOrderReceipt = async (req, res) => {
 
     const { data: existing, error: existingError } = await db
       .from("orders")
-      .select("id, buyer_id, status")
+      .select("id, buyer_id, seller_id, status, price_cents, payout_status")
       .eq("id", orderId)
       .maybeSingle();
 
@@ -436,6 +389,19 @@ const confirmOrderReceipt = async (req, res) => {
 
     if (existing.status !== "shipped") {
       return res.status(400).json({ message: "Only shipped orders can be confirmed" });
+    }
+
+    if (existing.payout_status !== "released") {
+      try {
+        await creditOrderRelease({
+          sellerId: existing.seller_id,
+          orderId: existing.id,
+          amountCents: existing.price_cents
+        });
+      } catch (walletError) {
+        console.error("confirmOrderReceipt wallet release error", walletError);
+        return handleWalletError(walletError, res, "Failed to release seller earnings");
+      }
     }
 
     const completedAt = new Date().toISOString();

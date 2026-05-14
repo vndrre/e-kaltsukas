@@ -4,6 +4,7 @@ const {
   getBlockingOrderItemIds,
   getConversationLockState
 } = require("../services/orderAvailability");
+const { notifyChatUnread } = require("../socket/chatSocket");
 const OFFER_PREFIX = "__OFFER__";
 const db = supabaseAdmin || supabase;
 
@@ -22,6 +23,138 @@ function parseOfferBody(body) {
   } catch {
     return null;
   }
+}
+
+function getReadAtColumnForUser(conversation, userId) {
+  if (conversation?.buyer_id === userId) {
+    return "buyer_last_read_at";
+  }
+
+  if (conversation?.seller_id === userId) {
+    return "seller_last_read_at";
+  }
+
+  return null;
+}
+
+function getReadAtValue(conversation, userId) {
+  if (conversation?.buyer_id === userId) {
+    return conversation.buyer_last_read_at ?? null;
+  }
+
+  if (conversation?.seller_id === userId) {
+    return conversation.seller_last_read_at ?? null;
+  }
+
+  return null;
+}
+
+function formatMessagePreview(body) {
+  const offer = parseOfferBody(body);
+  if (offer) {
+    const amount = Number(offer.amount);
+    const currency = offer.currency === "EUR" || !offer.currency ? "€" : `${offer.currency} `;
+    return `Offer ${currency}${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}`;
+  }
+
+  const trimmed = typeof body === "string" ? body.trim() : "";
+  if (!trimmed) {
+    return "New message";
+  }
+
+  return trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed;
+}
+
+function countUnreadMessages(conversation, userId, incomingMessages) {
+  const readAt = getReadAtValue(conversation, userId);
+  const readTime = readAt ? new Date(readAt).getTime() : 0;
+
+  return (incomingMessages ?? []).filter((message) => {
+    if (message.conversation_id !== conversation.id) {
+      return false;
+    }
+
+    const createdAt = new Date(message.created_at).getTime();
+    return Number.isFinite(createdAt) && createdAt > readTime;
+  }).length;
+}
+
+async function markConversationRead(db, conversation, userId) {
+  const readColumn = getReadAtColumnForUser(conversation, userId);
+  if (!readColumn) {
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  const { error } = await db
+    .from("conversations")
+    .update({ [readColumn]: timestamp })
+    .eq("id", conversation.id);
+
+  if (error) {
+    throw error;
+  }
+}
+
+function buildUnreadSummary(conversations, userId, incomingMessages) {
+  let unreadMessageCount = 0;
+  let unreadConversationCount = 0;
+
+  for (const conversation of conversations) {
+    const unreadCount = countUnreadMessages(conversation, userId, incomingMessages);
+    if (unreadCount > 0) {
+      unreadConversationCount += 1;
+      unreadMessageCount += unreadCount;
+    }
+  }
+
+  return {
+    unreadMessageCount,
+    unreadConversationCount
+  };
+}
+
+async function loadIncomingMessages(db, conversationIds, userId) {
+  if (!conversationIds.length) {
+    return [];
+  }
+
+  const { data, error } = await db
+    .from("messages")
+    .select("conversation_id, created_at")
+    .in("conversation_id", conversationIds)
+    .neq("sender_id", userId);
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}
+
+async function loadLatestMessagesByConversation(db, conversationIds) {
+  if (!conversationIds.length) {
+    return new Map();
+  }
+
+  const { data, error } = await db
+    .from("messages")
+    .select("conversation_id, sender_id, body, created_at")
+    .in("conversation_id", conversationIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const latestByConversation = new Map();
+  for (const message of data ?? []) {
+    if (!latestByConversation.has(message.conversation_id)) {
+      latestByConversation.set(message.conversation_id, message);
+    }
+  }
+
+  return latestByConversation;
 }
 
 async function ensureConversationParticipant(db, conversationId, userId) {
@@ -154,7 +287,9 @@ const listMyConversations = async (req, res) => {
 
     const { data: conversations, error } = await db
       .from("conversations")
-      .select("id, item_id, buyer_id, seller_id, last_message_at, created_at")
+      .select(
+        "id, item_id, buyer_id, seller_id, last_message_at, created_at, buyer_last_read_at, seller_last_read_at"
+      )
       .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false });
@@ -165,19 +300,28 @@ const listMyConversations = async (req, res) => {
     }
 
     const safeConversations = conversations ?? [];
+    const conversationIds = safeConversations.map((entry) => entry.id);
     const itemIds = [...new Set(safeConversations.map((entry) => entry.item_id).filter(Boolean))];
     const counterpartIds = safeConversations.map((entry) =>
       entry.buyer_id === userId ? entry.seller_id : entry.buyer_id
     );
     const uniqueCounterpartIds = [...new Set(counterpartIds.filter(Boolean))];
 
-    const [{ data: items }, { data: profiles }] = await Promise.all([
+    const [{ data: items }, { data: profiles }, incomingMessages, latestByConversation] = await Promise.all([
       itemIds.length
         ? db.from("items").select("id, title, images_json, price_cents, price").in("id", itemIds)
         : Promise.resolve({ data: [] }),
       uniqueCounterpartIds.length
         ? db.from("profiles").select("id, username, avatar_url").in("id", uniqueCounterpartIds)
-        : Promise.resolve({ data: [] })
+        : Promise.resolve({ data: [] }),
+      loadIncomingMessages(db, conversationIds, userId).catch((incomingError) => {
+        console.error("listMyConversations unread lookup error", incomingError);
+        return [];
+      }),
+      loadLatestMessagesByConversation(db, conversationIds).catch((latestError) => {
+        console.error("listMyConversations preview lookup error", latestError);
+        return new Map();
+      })
     ]);
 
     const itemById = new Map((items ?? []).map((entry) => [entry.id, entry]));
@@ -207,8 +351,14 @@ const listMyConversations = async (req, res) => {
             })()
           : [];
 
+      const latestMessage = latestByConversation.get(entry.id) || null;
+      const unreadCount = countUnreadMessages(entry, userId, incomingMessages);
+
       return {
         ...entry,
+        unreadCount,
+        lastMessagePreview: latestMessage ? formatMessagePreview(latestMessage.body) : null,
+        lastMessageAt: latestMessage?.created_at ?? entry.last_message_at ?? entry.created_at,
         isLocked: lockedItemIds.has(entry.item_id),
         lockReason: lockedItemIds.has(entry.item_id) ? CONVERSATION_LOCKED_MESSAGE : null,
         counterpart: {
@@ -343,7 +493,7 @@ const listConversationMessages = async (req, res) => {
 
     const { data: conversation, error: conversationError } = await db
       .from("conversations")
-      .select("id, buyer_id, seller_id")
+      .select("id, buyer_id, seller_id, buyer_last_read_at, seller_last_read_at")
       .eq("id", conversationId)
       .maybeSingle();
 
@@ -369,6 +519,12 @@ const listConversationMessages = async (req, res) => {
     if (messagesError) {
       console.error("listConversationMessages messages error", messagesError);
       return res.status(500).json({ message: messagesError.message || "Failed to load messages" });
+    }
+
+    try {
+      await markConversationRead(db, conversation, userId);
+    } catch (readError) {
+      console.error("listConversationMessages mark read error", readError);
     }
 
     return res.json({ messages: messages ?? [] });
@@ -435,6 +591,10 @@ const sendConversationMessage = async (req, res) => {
       .update({ last_message_at: message.created_at })
       .eq("id", conversationId);
 
+    const recipientId =
+      conversation.buyer_id === userId ? conversation.seller_id : conversation.buyer_id;
+    notifyChatUnread(recipientId);
+
     return res.status(201).json({ message });
   } catch (err) {
     console.error("sendConversationMessage error", err);
@@ -495,6 +655,12 @@ const createOffer = async (req, res) => {
       .from("conversations")
       .update({ last_message_at: message.created_at })
       .eq("id", conversationId);
+
+    const recipientId =
+      access.conversation.buyer_id === userId
+        ? access.conversation.seller_id
+        : access.conversation.buyer_id;
+    notifyChatUnread(recipientId);
 
     return res.status(201).json({ message });
   } catch (err) {
@@ -702,6 +868,12 @@ const updateOffer = async (req, res) => {
         .update({ last_message_at: newMessage.created_at })
         .eq("id", conversationId);
 
+      const recipientId =
+        access.conversation.buyer_id === userId
+          ? access.conversation.seller_id
+          : access.conversation.buyer_id;
+      notifyChatUnread(recipientId);
+
       return res.json({ message: newMessage });
     }
 
@@ -712,6 +884,72 @@ const updateOffer = async (req, res) => {
   }
 };
 
+const getUnreadSummary = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { data: conversations, error } = await db
+      .from("conversations")
+      .select("id, buyer_id, seller_id, buyer_last_read_at, seller_last_read_at")
+      .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`);
+
+    if (error) {
+      console.error("getUnreadSummary error", error);
+      return res.status(500).json({ message: error.message || "Failed to load unread summary" });
+    }
+
+    const safeConversations = conversations ?? [];
+    const conversationIds = safeConversations.map((entry) => entry.id);
+    const incomingMessages = await loadIncomingMessages(db, conversationIds, userId);
+    const summary = buildUnreadSummary(safeConversations, userId, incomingMessages);
+
+    return res.json(summary);
+  } catch (err) {
+    console.error("getUnreadSummary error", err);
+    return res.status(500).json({ message: "Failed to load unread summary" });
+  }
+};
+
+const markConversationAsRead = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id: conversationId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { data: conversation, error } = await db
+      .from("conversations")
+      .select("id, buyer_id, seller_id, buyer_last_read_at, seller_last_read_at")
+      .eq("id", conversationId)
+      .maybeSingle();
+
+    if (error) {
+      return res.status(500).json({ message: error.message || "Failed to load conversation" });
+    }
+
+    if (!conversation) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    if (conversation.buyer_id !== userId && conversation.seller_id !== userId) {
+      return res.status(403).json({ message: "Forbidden conversation" });
+    }
+
+    await markConversationRead(db, conversation, userId);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("markConversationAsRead error", err);
+    return res.status(500).json({ message: "Failed to mark conversation as read" });
+  }
+};
+
 module.exports = {
   createOrGetConversation,
   listMyConversations,
@@ -719,5 +957,7 @@ module.exports = {
   listConversationMessages,
   sendConversationMessage,
   createOffer,
-  updateOffer
+  updateOffer,
+  getUnreadSummary,
+  markConversationAsRead
 };

@@ -4,11 +4,14 @@ const {
   getItemOptions,
   getItemById,
   createItem,
+  updateItem,
+  deleteItem,
   uploadItemImage,
   getListingDraft,
   upsertListingDraft,
   deleteListingDraft,
   listFavoriteItemIds,
+  listFavoriteItems,
   isItemFavorited,
   addFavoriteItem,
   removeFavoriteItem
@@ -24,6 +27,7 @@ router.get("/draft", authMiddleware, getListingDraft);
 router.put("/draft", authMiddleware, upsertListingDraft);
 router.delete("/draft", authMiddleware, deleteListingDraft);
 router.get("/favorites", authMiddleware, listFavoriteItemIds);
+router.get("/favorites/items", authMiddleware, listFavoriteItems);
 router.get("/:id/favorite", authMiddleware, isItemFavorited);
 router.post("/:id/favorite", authMiddleware, addFavoriteItem);
 router.delete("/:id/favorite", authMiddleware, removeFavoriteItem);
@@ -35,5 +39,7 @@ router.post(
   uploadItemImage
 );
 router.post("/", authMiddleware, createItem);
+router.put("/:id", authMiddleware, updateItem);
+router.delete("/:id", authMiddleware, deleteItem);
 
 module.exports = router;

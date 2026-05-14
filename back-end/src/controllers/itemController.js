@@ -98,9 +98,39 @@ const buildFallbackOptions = () => {
   };
 };
 
+const collectQueryValues = (value) => {
+  if (value == null) {
+    return [];
+  }
+
+  const values = Array.isArray(value) ? value : [value];
+  return [
+    ...new Set(
+      values
+        .flatMap((entry) => String(entry).split(","))
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    )
+  ];
+};
+
+const applyInFilter = (query, column, values) => {
+  if (!values.length) {
+    return query;
+  }
+
+  if (values.length === 1) {
+    return query.eq(column, values[0]);
+  }
+
+  return query.in(column, values);
+};
+
 const listItems = async (req, res) => {
   try {
-    const { q, category, size, brand, minPrice, maxPrice, sellerId } = req.query;
+    const { q, brand, minPrice, maxPrice, sellerId } = req.query;
+    const categories = collectQueryValues(req.query.category ?? req.query.categories);
+    const sizes = collectQueryValues(req.query.size ?? req.query.sizes);
 
     let query = supabase.from("items").select(
       `
@@ -125,12 +155,12 @@ const listItems = async (req, res) => {
       );
     }
 
-    if (category) {
-      query = query.eq("category", category);
+    if (categories.length) {
+      query = applyInFilter(query, "category", categories);
     }
 
-    if (size) {
-      query = query.eq("size", size);
+    if (sizes.length) {
+      query = applyInFilter(query, "size", sizes);
     }
 
     if (brand) {
@@ -469,7 +499,7 @@ const listFavoriteItemIds = async (req, res) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("favorites")
       .select("item_id")
       .eq("user_id", userId);
@@ -487,6 +517,72 @@ const listFavoriteItemIds = async (req, res) => {
   }
 };
 
+const listFavoriteItems = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const { data: favorites, error: favoritesError } = await db
+      .from("favorites")
+      .select("item_id, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (favoritesError) {
+      console.error("listFavoriteItems favorites error", favoritesError);
+      return res.status(500).json({ message: "Failed to load favorites" });
+    }
+
+    const itemIds = (favorites ?? []).map((entry) => entry.item_id).filter(Boolean);
+    if (!itemIds.length) {
+      return res.json({ items: [] });
+    }
+
+    const { data: rows, error: itemsError } = await db
+      .from("items")
+      .select(
+        `
+        id,
+        title,
+        description,
+        price_cents,
+        condition,
+        size,
+        brand,
+        category,
+        is_new,
+        images_json,
+        seller_id,
+        created_at
+      `
+      )
+      .in("id", itemIds);
+
+    if (itemsError) {
+      console.error("listFavoriteItems items error", itemsError);
+      return res.status(500).json({ message: "Failed to load favorites" });
+    }
+
+    const itemsById = new Map((rows ?? []).map((row) => [row.id, row]));
+    const items = itemIds
+      .map((itemId) => itemsById.get(itemId))
+      .filter(Boolean)
+      .map((row) => ({
+        ...row,
+        price: row.price_cents / 100,
+        images: normalizeImages(row.images_json)
+      }));
+
+    return res.json({ items });
+  } catch (err) {
+    console.error("listFavoriteItems error", err);
+    return res.status(500).json({ message: "Failed to load favorites" });
+  }
+};
+
 const isItemFavorited = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -496,7 +592,7 @@ const isItemFavorited = async (req, res) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("favorites")
       .select("item_id")
       .eq("user_id", userId)
@@ -524,7 +620,22 @@ const addFavoriteItem = async (req, res) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { error } = await supabase
+    const { data: item, error: itemError } = await db
+      .from("items")
+      .select("id")
+      .eq("id", itemId)
+      .maybeSingle();
+
+    if (itemError) {
+      console.error("addFavoriteItem item lookup error", itemError);
+      return res.status(500).json({ message: "Failed to add favorite" });
+    }
+
+    if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    const { error } = await db
       .from("favorites")
       .upsert(
         {
@@ -654,7 +765,7 @@ const removeFavoriteItem = async (req, res) => {
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
-    const { error } = await supabase
+    const { error } = await db
       .from("favorites")
       .delete()
       .eq("user_id", userId)
@@ -672,16 +783,257 @@ const removeFavoriteItem = async (req, res) => {
   }
 };
 
+const ITEM_CONDITIONS = [
+  "New with tags",
+  "Like new",
+  "Very good",
+  "Good",
+  "Fair"
+];
+
+const mapItemRow = (row) => ({
+  ...row,
+  price: row.price_cents / 100,
+  images: normalizeImages(row.images_json)
+});
+
+const purgeItemReferences = async (itemId) => {
+  const { data: conversations, error: conversationsError } = await db
+    .from("conversations")
+    .select("id")
+    .eq("item_id", itemId);
+
+  if (conversationsError) {
+    throw conversationsError;
+  }
+
+  const conversationIds = (conversations ?? []).map((entry) => entry.id);
+  if (conversationIds.length) {
+    const { error: messagesError } = await db
+      .from("messages")
+      .delete()
+      .in("conversation_id", conversationIds);
+
+    if (messagesError) {
+      throw messagesError;
+    }
+
+    const { error: deleteConversationsError } = await db
+      .from("conversations")
+      .delete()
+      .eq("item_id", itemId);
+
+    if (deleteConversationsError) {
+      throw deleteConversationsError;
+    }
+  }
+
+  const cleanupResults = await Promise.all([
+    db.from("favorites").delete().eq("item_id", itemId),
+    db.from("cart_items").delete().eq("item_id", itemId)
+  ]);
+
+  for (const result of cleanupResults) {
+    if (result.error) {
+      throw result.error;
+    }
+  }
+};
+
+const loadOwnedItem = async (itemId, userId) => {
+  const { data, error } = await db
+    .from("items")
+    .select(
+      `
+      id,
+      title,
+      description,
+      price_cents,
+      condition,
+      size,
+      brand,
+      category,
+      is_new,
+      images_json,
+      seller_id,
+      created_at
+    `
+    )
+    .eq("id", itemId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return { status: 404, message: "Item not found", item: null };
+  }
+
+  if (data.seller_id !== userId) {
+    return { status: 403, message: "Forbidden", item: null };
+  }
+
+  return { status: 200, message: null, item: data };
+};
+
+const updateItem = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id: itemId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const owned = await loadOwnedItem(itemId, userId);
+    if (!owned.item) {
+      return res.status(owned.status).json({ message: owned.message });
+    }
+
+    if (await itemHasBlockingOrder(db, itemId)) {
+      return res.status(409).json({
+        message: "This listing can't be changed while an order is in progress."
+      });
+    }
+
+    const {
+      title,
+      description,
+      price,
+      condition,
+      size,
+      brand,
+      category,
+      isNew,
+      images
+    } = req.body;
+
+    if (images != null && !Array.isArray(images)) {
+      return res.status(400).json({ message: "images must be an array of URLs" });
+    }
+
+    if (!title || price == null) {
+      return res.status(400).json({ message: "Title and price are required" });
+    }
+
+    const numericPrice = Number(price);
+    if (Number.isNaN(numericPrice) || numericPrice < 0) {
+      return res.status(400).json({ message: "Price must be a valid non-negative number" });
+    }
+
+    if (condition && !ITEM_CONDITIONS.includes(condition)) {
+      return res.status(400).json({ message: "Invalid item condition" });
+    }
+
+    const priceCents = Math.round(numericPrice * 100);
+    const nextImages = Array.isArray(images)
+      ? images.filter((entry) => typeof entry === "string" && entry.trim())
+      : normalizeImages(owned.item.images_json);
+
+    const { data, error } = await db
+      .from("items")
+      .update({
+        title: String(title).trim(),
+        description: description ? String(description).trim() : null,
+        price_cents: priceCents,
+        condition: condition || null,
+        size: size || null,
+        brand: brand || null,
+        category: category || null,
+        is_new: typeof isNew === "boolean" ? isNew : condition === "New with tags",
+        images_json: nextImages.length ? JSON.stringify(nextImages) : null
+      })
+      .eq("id", itemId)
+      .select(
+        `
+        id,
+        title,
+        description,
+        price_cents,
+        condition,
+        size,
+        brand,
+        category,
+        is_new,
+        images_json,
+        seller_id,
+        created_at
+      `
+      )
+      .single();
+
+    if (error) {
+      console.error("updateItem supabase error", error);
+      return res.status(500).json({ message: "Failed to update item" });
+    }
+
+    return res.json({ item: mapItemRow(data) });
+  } catch (err) {
+    console.error("updateItem error", err);
+    return res.status(500).json({ message: "Failed to update item" });
+  }
+};
+
+const deleteItem = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id: itemId } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const owned = await loadOwnedItem(itemId, userId);
+    if (!owned.item) {
+      return res.status(owned.status).json({ message: owned.message });
+    }
+
+    if (await itemHasBlockingOrder(db, itemId)) {
+      return res.status(409).json({
+        message: "This listing can't be deleted while an order is in progress."
+      });
+    }
+
+    try {
+      await purgeItemReferences(itemId);
+    } catch (cleanupError) {
+      console.error("deleteItem cleanup error", cleanupError);
+      return res.status(500).json({ message: "Failed to delete related listing data" });
+    }
+
+    const { error } = await db.from("items").delete().eq("id", itemId);
+
+    if (error) {
+      console.error("deleteItem supabase error", error);
+      if (error.code === "23503") {
+        return res.status(409).json({
+          message: "This listing still has order history and can't be deleted."
+        });
+      }
+      return res.status(500).json({ message: error.message || "Failed to delete item" });
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("deleteItem error", err);
+    return res.status(500).json({ message: "Failed to delete item" });
+  }
+};
+
 module.exports = {
   listItems,
   getItemOptions,
   getItemById,
   createItem,
+  updateItem,
+  deleteItem,
   uploadItemImage,
   getListingDraft,
   upsertListingDraft,
   deleteListingDraft,
   listFavoriteItemIds,
+  listFavoriteItems,
   isItemFavorited,
   addFavoriteItem,
   removeFavoriteItem

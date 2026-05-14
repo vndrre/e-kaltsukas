@@ -11,6 +11,8 @@ const chatRoutes = require("./routes/chatRoutes");
 const cartRoutes = require("./routes/cartRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const addressRoutes = require("./routes/addressRoutes");
+const walletRoutes = require("./routes/walletRoutes");
+const stripeWebhookRoutes = require("./routes/stripeWebhookRoutes");
 
 const app = express();
 
@@ -19,6 +21,7 @@ app.use(
     origin: env.CORS_ORIGIN === "*" ? true : env.CORS_ORIGIN.split(",")
   })
 );
+app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
 app.use(express.json());
 
 app.use("/api", healthRoutes);
@@ -29,6 +32,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/addresses", addressRoutes);
+app.use("/api/wallet", walletRoutes);
 
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {

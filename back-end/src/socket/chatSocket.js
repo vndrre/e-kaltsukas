@@ -4,6 +4,15 @@ const { getConversationLockState } = require("../services/orderAvailability");
 const { env } = require("../config/env");
 
 const db = supabaseAdmin ?? supabase;
+let ioInstance = null;
+
+function notifyChatUnread(userId) {
+  if (!userId || !ioInstance) {
+    return;
+  }
+
+  ioInstance.to(`user:${userId}`).emit("chat:unread");
+}
 
 async function getUserFromToken(token) {
   if (!token) return null;
@@ -40,6 +49,7 @@ function createSocketServer(httpServer) {
       origin: env.CORS_ORIGIN === "*" ? true : env.CORS_ORIGIN.split(",")
     }
   });
+  ioInstance = io;
 
   io.use(async (socket, next) => {
     try {
@@ -149,6 +159,11 @@ function createSocketServer(httpServer) {
           .eq("id", conversationId);
 
         io.to(toConversationRoom(conversationId)).emit("chat:message", message);
+        const recipientId =
+          conversation.buyer_id === socket.user.id
+            ? conversation.seller_id
+            : conversation.buyer_id;
+        notifyChatUnread(recipientId);
 
         return ack({ ok: true, message });
       } catch (_error) {
@@ -160,4 +175,4 @@ function createSocketServer(httpServer) {
   return io;
 }
 
-module.exports = { createSocketServer };
+module.exports = { createSocketServer, notifyChatUnread };

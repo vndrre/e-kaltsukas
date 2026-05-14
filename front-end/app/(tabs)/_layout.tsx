@@ -5,6 +5,8 @@ import React from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ActivityIndicator, Animated, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useAuth } from '@/hooks/auth-provider';
+import { useInboxUnread } from '@/hooks/inbox-unread-provider';
+import { MenuDrawerProvider } from '@/hooks/menu-drawer-provider';
 import { rememberNonSellTabFromPathname } from '@/hooks/last-non-sell-tab';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
@@ -174,6 +176,7 @@ function SellTabBarButton(props: BottomTabBarButtonProps) {
 export default function TabLayout() {
   const { theme } = useAppTheme();
   const { isHydrated, isAuthenticated } = useAuth();
+  const { unreadMessageCount } = useInboxUnread();
   const pathname = usePathname();
   const hideTabBarForSellFlow = pathname.includes('/sell');
   const { width } = useWindowDimensions();
@@ -198,7 +201,8 @@ export default function TabLayout() {
   }
 
   return (
-    <Tabs
+    <MenuDrawerProvider>
+      <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: theme.primary,
@@ -245,6 +249,11 @@ export default function TabLayout() {
         name="inbox"
         options={{
           title: 'Inbox',
+          tabBarBadge: unreadMessageCount > 0 ? (unreadMessageCount > 99 ? '99+' : unreadMessageCount) : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: theme.primary,
+            color: theme.textOnPrimary,
+          },
           tabBarIcon: ({ color }) => <MaterialIcons name="chat-bubble-outline" size={22} color={color} />,
         }}
       />
@@ -256,6 +265,7 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </MenuDrawerProvider>
   );
 }
 

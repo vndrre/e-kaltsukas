@@ -256,7 +256,14 @@ export default function ProductScreen() {
   };
 
   const handleManageListing = () => {
-    router.push('/(tabs)/profile');
+    if (!item?.id) {
+      return;
+    }
+
+    router.push({
+      pathname: '/listing/[id]',
+      params: { id: item.id },
+    });
   };
 
   const handleToggleFavorite = async () => {
@@ -415,7 +422,7 @@ export default function ProductScreen() {
             {isOwnListing ? (
               <>
                 <Text className="mt-3 text-sm leading-6" style={{ color: theme.textMuted }}>
-                  This is your listing. You can manage it from your closet.
+                  Update photos, price, and details, or remove this listing.
                 </Text>
                 <Pressable className="mt-4 items-center rounded-xl border py-3" style={{ borderColor: theme.border }} onPress={handleManageListing}>
                   <Text className="text-[11px] font-bold uppercase tracking-[1px]" style={{ color: theme.text }}>
