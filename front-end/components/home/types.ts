@@ -3,6 +3,7 @@ export type ProductItem = {
   name: string;
   price: string;
   image: string;
+  category?: string;
 };
 
 export type RecommendedItem = ProductItem & {

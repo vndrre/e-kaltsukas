@@ -8,7 +8,19 @@ const env = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || "*",
   SUPABASE_URL: process.env.SUPABASE_URL || "",
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || "",
-  CLOUDINARY_URL: process.env.CLOUDINARY_URL || ""
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  RESEND_API_KEY: process.env.RESEND_API_KEY || "",
+  RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
+  AUTH_EMAIL_REDIRECT_URL:
+    process.env.AUTH_EMAIL_REDIRECT_URL ||
+    "http://localhost:8081/login?verified=1",
+  CLOUDINARY_URL: process.env.CLOUDINARY_URL || "",
+  LOCALITY_API_KEY: process.env.LOCALITY_API_KEY || "",
+  LOCALITY_API_URL: process.env.LOCALITY_API_URL || "https://api.locality.ee",
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "",
+  STRIPE_PUBLISHABLE_KEY:
+    process.env.STRIPE_PUBLISHABLE_KEY || process.env.STRIPE_PUBLIC_KEY || "",
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || ""
 };
 
 module.exports = { env };

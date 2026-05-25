@@ -3,6 +3,8 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import '../global.css';
 import { AuthProvider } from '@/hooks/auth-provider';
+import { CartProvider } from '@/hooks/cart-provider';
+import { InboxUnreadProvider } from '@/hooks/inbox-unread-provider';
 import { ThemePreferenceProvider } from '@/hooks/theme-preference-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
@@ -10,7 +12,11 @@ export default function RootLayout() {
   return (
     <ThemePreferenceProvider>
       <AuthProvider>
-        <RootNavigator />
+        <CartProvider>
+          <InboxUnreadProvider>
+            <RootNavigator />
+          </InboxUnreadProvider>
+        </CartProvider>
       </AuthProvider>
     </ThemePreferenceProvider>
   );
@@ -25,6 +31,16 @@ function RootNavigator() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="product/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="listing/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="cart" options={{ headerShown: false }} />
+        <Stack.Screen name="checkout" options={{ headerShown: false }} />
+        <Stack.Screen name="orders" options={{ headerShown: false }} />
+        <Stack.Screen name="order/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="wallet" options={{ headerShown: false }} />
+        <Stack.Screen name="favorites" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </>

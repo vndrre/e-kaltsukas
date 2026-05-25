@@ -1,6 +1,18 @@
 const { Server } = require("socket.io");
-const { supabase } = require("../services/supabaseClient");
+const { supabase, supabaseAdmin } = require("../services/supabaseClient");
+const { getConversationLockState } = require("../services/orderAvailability");
 const { env } = require("../config/env");
+
+const db = supabaseAdmin ?? supabase;
+let ioInstance = null;
+
+function notifyChatUnread(userId) {
+  if (!userId || !ioInstance) {
+    return;
+  }
+
+  ioInstance.to(`user:${userId}`).emit("chat:unread");
+}
 
 async function getUserFromToken(token) {
   if (!token) return null;
@@ -10,17 +22,21 @@ async function getUserFromToken(token) {
 }
 
 async function isConversationParticipant(conversationId, userId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("conversations")
-    .select("id, buyer_id, seller_id")
+    .select("id, buyer_id, seller_id, item_id")
     .eq("id", conversationId)
     .single();
 
   if (error || !data) {
-    return false;
+    return null;
   }
 
-  return data.buyer_id === userId || data.seller_id === userId;
+  if (data.buyer_id !== userId && data.seller_id !== userId) {
+    return null;
+  }
+
+  return data;
 }
 
 function toConversationRoom(conversationId) {
@@ -33,6 +49,7 @@ function createSocketServer(httpServer) {
       origin: env.CORS_ORIGIN === "*" ? true : env.CORS_ORIGIN.split(",")
     }
   });
+  ioInstance = io;
 
   io.use(async (socket, next) => {
     try {
@@ -72,11 +89,11 @@ function createSocketServer(httpServer) {
           return ack({ ok: false, error: "conversationId is required" });
         }
 
-        const allowed = await isConversationParticipant(
+        const conversation = await isConversationParticipant(
           conversationId,
           socket.user.id
         );
-        if (!allowed) {
+        if (!conversation) {
           return ack({ ok: false, error: "Forbidden conversation" });
         }
 
@@ -109,15 +126,20 @@ function createSocketServer(httpServer) {
           return ack({ ok: false, error: "body is required" });
         }
 
-        const allowed = await isConversationParticipant(
+        const conversation = await isConversationParticipant(
           conversationId,
           socket.user.id
         );
-        if (!allowed) {
+        if (!conversation) {
           return ack({ ok: false, error: "Forbidden conversation" });
         }
 
-        const { data: message, error: msgError } = await supabase
+        const lockState = await getConversationLockState(db, conversation.item_id);
+        if (lockState.isLocked) {
+          return ack({ ok: false, error: lockState.lockReason || "Conversation is locked" });
+        }
+
+        const { data: message, error: msgError } = await db
           .from("messages")
           .insert({
             conversation_id: conversationId,
@@ -131,12 +153,17 @@ function createSocketServer(httpServer) {
           return ack({ ok: false, error: "Failed to persist message" });
         }
 
-        await supabase
+        await db
           .from("conversations")
           .update({ last_message_at: message.created_at })
           .eq("id", conversationId);
 
         io.to(toConversationRoom(conversationId)).emit("chat:message", message);
+        const recipientId =
+          conversation.buyer_id === socket.user.id
+            ? conversation.seller_id
+            : conversation.buyer_id;
+        notifyChatUnread(recipientId);
 
         return ack({ ok: true, message });
       } catch (_error) {
@@ -148,4 +175,4 @@ function createSocketServer(httpServer) {
   return io;
 }
 
-module.exports = { createSocketServer };
+module.exports = { createSocketServer, notifyChatUnread };

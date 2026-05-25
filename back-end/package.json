@@ -10,7 +10,8 @@
     "seed:profiles": "node src/seed/seedProfiles.js",
     "seed:favorites": "node src/seed/seedFavorites.js",
     "seed:conversations": "node src/seed/seedConversations.js",
-    "seed:orders": "node src/seed/seedOrdersReviews.js"
+    "seed:orders": "node src/seed/seedOrdersReviews.js",
+    "email:test": "node src/scripts/sendTestEmail.js"
   },
   "keywords": [
     "express",
@@ -21,13 +22,16 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8",
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.104.0",
     "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "multer": "^2.0.2",
-    "socket.io": "^4.8.1"
+    "resend": "^6.12.2",
+    "socket.io": "^4.8.1",
+    "stripe": "^18.5.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
