@@ -1,6 +1,6 @@
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 import axios from 'axios';
+
+const PRODUCTION_API_URL = 'https://e-kaltsukas-eight.vercel.app';
 
 function normalizeBaseUrl(url: string) {
   return url.replace(/\/+$/, '');
@@ -12,17 +12,7 @@ function resolveApiBaseUrl() {
     return normalizeBaseUrl(configuredUrl);
   }
 
-  // Android emulator cannot resolve localhost on host machine.
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000';
-  }
-
-  const hostFromExpo = Constants.expoConfig?.hostUri?.split(':')[0];
-  if (hostFromExpo) {
-    return `http://${hostFromExpo}:5000`;
-  }
-
-  return 'http://localhost:5000';
+  return PRODUCTION_API_URL;
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
