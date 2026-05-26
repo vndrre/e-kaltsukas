@@ -1,176 +1,50 @@
-# ⚠️WORK IN PROGRESS⚠️
-# 👕E-kaltsukas
-- The Secondhand Clothing Marketplace App is a mobile platform that allows users to easily buy and sell pre-owned clothing. Inspired by apps like Depop and Vinted, users can create listings, upload photos, set prices, and communicate with buyers or sellers through real-time chat.
+# Welcome to your Expo app 👋
 
-The app promotes **sustainable fashion** by encouraging people to **reuse and resell clothing instead of discarding it**.
+This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
-### 🛠 Tech Stack
+## Get started
 
-- **Mobile App:** React Native (Expo)
-- **Backend:** Node.js + Express
-- **Database:** PostgreSQL (Supabase)
-- **Image Storage:** Cloudinary
-- **Payments:** Stripe
-- **Real-time Messaging:** Socket.IO
+1. Install dependencies
 
----
+   ```bash
+   npm install
+   ```
 
-# 🚀 Core Features (MVP)
+2. Start the app
 
-## 👤 User Accounts & Profiles
+   ```bash
+   npx expo start
+   ```
 
-- User registration and login  
-  - Email authentication  
-  - Social login (Google, Apple, Facebook)
+In the output, you'll find options to open the app in a
 
-- Profile customization
-  - Profile photo
-  - Bio
-  - Location
-  - Social links
+- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
+- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
+- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
-- User rating & reviews (after completed transactions)
+You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
-- View other users' profiles
-  - Listings
-  - Reviews
-  - Sold items
+## Get a fresh project
 
----
+When you're ready, run:
 
-## 👕 Listings (Sell & Browse Items)
+```bash
+npm run reset-project
+```
 
-### Create Listings
-Users can create product listings by:
+This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
-- Uploading multiple photos (Cloudinary)
-- Adding:
-  - Title
-  - Description
-  - Price
-  - Condition
-  - Size
-  - Brand
-  - Category
-- Toggle item status:
-  - New
-  - Used
+## Learn more
 
-### Browse Listings
+To learn more about developing your project with Expo, look at the following resources:
 
-- Infinite scroll or paginated feed
-- Filter and sorting options:
-  - Category
-  - Size
-  - Price
-  - Location
-  - Brand
-  - Newest
-- Search bar with keyword filtering
+- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
+- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
-### Product Details Page
+## Join the community
 
-Each item includes:
+Join our community of developers creating universal apps.
 
-- Item description
-- Seller information
-- **View Profile** link
-- **Chat** or **Make Offer** button
-- Related / recommended items
-
----
-
-## 💬 Chat System
-
-Real-time messaging between buyers and sellers.
-
-Features include:
-
-- 1:1 messaging using **Socket.IO**
-- Typing indicators
-- Message timestamps
-- Push notifications for new messages
-- Optional photo attachments in messages
-
----
-
-## 💰 Payment & Transaction System
-
-Integrated payment system using **Stripe**.
-
-**Integration blueprint (hold funds until delivery, Connect, shipping notes, security):** see [`docs/MARKETPLACE_PAYMENTS_AND_SHIPPING.md`](docs/MARKETPLACE_PAYMENTS_AND_SHIPPING.md).
-
-Features include:
-
-- In-app checkout process
-- Secure payments
-- Transaction flow:
-  - Buyer pays
-  - Funds are held
-  - Seller ships item
-  - Seller receives payout
-
-Transaction tracking:
-
-- Pending
-- Shipped
-- Delivered
-- Completed
-
-Additional features:
-
-- Order history (buyer & seller)
-- Refund and dispute placeholder system
-
----
-
-## 🏠 Home Feed & Discovery
-
-Users can explore items through a personalized feed.
-
-Features include:
-
-- Recently added items
-- Trending listings
-- Items near the user
-- Category tabs:
-  - Tops
-  - Shoes
-  - Accessories
-  - etc.
-
-Users can also:
-
-- ❤️ Like items
-- ⭐ Save items to favorites
-
----
-
-## 🛒 Shopping & Selling Dashboard
-
-### Buyer Dashboard
-
-- Purchase history
-- Favorite items
-- Access to chat conversations
-
-### Seller Dashboard
-
-- Active listings
-- Sold items
-- Pending payments
-
----
-
-## 🔒 Security & Authentication
-
-The app includes basic security and authentication mechanisms.
-
-- JWT-based authentication
-- Secure token system
-- Password reset via email
-
-Moderation tools:
-
-- Report / flag listings
-- Report users
+- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
+- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
